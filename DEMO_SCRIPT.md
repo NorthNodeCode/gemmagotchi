@@ -24,6 +24,7 @@
 - On the notes step: **upload the lecture PDF** — point at the char count as it lands in the notes.
 > "Everything it teaches comes from *your* lecture material — we parse PDFs and PowerPoints server-side. And this is **Gemma 4 — `gemma4:e4b` — running on this laptop through Ollama**. No API, no internet, no rate limits."
 - Hit **Build my study plan**. While it plans (~45s, thinking mode):
+- After the user uploads their file, they'll answer a few quick Psychometric Questions. These take less than a minute and help us understand your current level with the material, so the notes and questions we generate actually match where you're at. Beginners get simplified explanations and foundational questions, intermediates get moderate depth with some challenge, and experts get advanced notes and in-depth questions.
 > "This is the one place we turn Gemma's thinking mode ON — curriculum planning is genuine reasoning. Everywhere else it's off; that decision alone took a lesson from 171 seconds to 15."
 - *(Filler while waiting, if needed):* open the header — point at **GEMMA4:E4B · ON-DEVICE**.
 
