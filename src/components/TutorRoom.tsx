@@ -22,6 +22,8 @@ interface Props {
   course: Course;
   module: SubLesson;
   pet: PetState;
+  /** Bought in the gem sanctuary — adds "Go deeper" to every check. */
+  hasMasterclass: boolean;
   onCorrect: (weight: number) => void;
   onLessonComplete: (moduleId: string, score: number, total: number) => void;
   onExit: () => void;
@@ -31,6 +33,7 @@ export const TutorRoom: React.FC<Props> = ({
   course,
   module,
   pet,
+  hasMasterclass,
   onCorrect,
   onLessonComplete,
   onExit,
@@ -188,6 +191,7 @@ export const TutorRoom: React.FC<Props> = ({
                 index={qIndex}
                 total={questions.length}
                 subject={course.subject}
+                hasMasterclass={hasMasterclass}
                 onResolved={handleQuestionResolved}
                 onNext={nextQuestion}
               />
@@ -250,14 +254,45 @@ const QuestionCard: React.FC<{
   index: number;
   total: number;
   subject: string;
+  hasMasterclass: boolean;
   onResolved: (correct: boolean) => void;
   onNext: () => void;
-}> = ({ question, index, total, subject, onResolved, onNext }) => {
+}> = ({ question, index, total, subject, hasMasterclass, onResolved, onNext }) => {
   const [selected, setSelected] = useState<number | null>(null);
   const [text, setText] = useState("");
   const [grading, setGrading] = useState(false);
   const [result, setResult] = useState<GradeResult | null>(null);
+  const [deeper, setDeeper] = useState<string | null>(null);
+  const [deepening, setDeepening] = useState(false);
   const revealed = selected !== null || result !== null;
+
+  /** Explain-mode Socratic call, scoped to this exact question and answer. */
+  async function explainDeeper() {
+    setDeepening(true);
+    try {
+      const res = await fetch("/api/ai/socratic-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: subject,
+          mode: "explain",
+          userMessage: `I was asked: "${question.question}". The answer is: ${
+            question.modelAnswer ??
+            question.explanation ??
+            (question.options && question.correctIndex != null
+              ? question.options[question.correctIndex]
+              : "")
+          }. Explain the underlying idea properly so I actually understand why.`,
+        }),
+      });
+      const data = await res.json();
+      setDeeper(data.reply || "Gemma could not reach that one — try again in a moment.");
+    } catch {
+      setDeeper("Gemma could not reach that one — try again in a moment.");
+    } finally {
+      setDeepening(false);
+    }
+  }
 
   async function submitText() {
     if (text.trim().length < 2) return;
@@ -371,6 +406,31 @@ const QuestionCard: React.FC<{
               <span className="font-bold">Worth adding: </span>
               {result.missedPoint}
             </p>
+          )}
+
+          {/* Unlocked with the Socratic masterclass in the gem sanctuary. */}
+          {hasMasterclass && (
+            <div className="mt-3 border-t border-current/10 pt-3">
+              {deeper ? (
+                <Markdown content={deeper} className="text-[13px]" />
+              ) : (
+                <button
+                  onClick={explainDeeper}
+                  disabled={deepening}
+                  className="flex items-center gap-1.5 text-xs font-bold text-[#5E7161] underline underline-offset-2 disabled:opacity-50"
+                >
+                  {deepening ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Gemma 4 is going deeper…
+                    </>
+                  ) : (
+                    <>
+                      <BookOpen className="h-3.5 w-3.5" /> Go deeper on this
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
           )}
         </motion.div>
       )}

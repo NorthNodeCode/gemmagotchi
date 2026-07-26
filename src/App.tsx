@@ -18,7 +18,8 @@ import {
   fetchRescue,
   prefetchLesson,
 } from "./services/api";
-import { applyDecay, createPet, feedPet, recordStudy, type PetState } from "./lib/petState";
+import { applyDecay, createPet, feedPet, recordStudy, stageFor, type PetState } from "./lib/petState";
+import { GemSanctuary, type Reward } from "./components/GemSanctuary";
 import { advanceDays, now, offsetDays, resetClock } from "./lib/clock";
 import { FOODS } from "./lib/sprites";
 import type {
@@ -284,6 +285,33 @@ function Gemmagotchi() {
     handleCorrect(1);
   }
 
+  /**
+   * Gems buy help for the pet, never a shortcut past the studying. The surge
+   * runs growth through the same stage recompute a correct answer does, so
+   * hatching still fires the celebration.
+   */
+  function redeemReward(reward: Reward) {
+    if (gems < reward.cost) return;
+    setGems((g) => g - reward.cost);
+
+    if (reward.id === "masterclass") {
+      setInventory((inv) =>
+        inv.owned.includes("masterclass") ? inv : { ...inv, owned: [...inv.owned, "masterclass"] }
+      );
+      return;
+    }
+
+    setPet((p) => {
+      if (!p) return p;
+      if (reward.id === "elixir") return feedPet(p, 50);
+      const growth = p.growth + 3;
+      const stage = stageFor(growth);
+      if (stage !== p.stage) confetti({ particleCount: 140, spread: 90, origin: { y: 0.6 } });
+      return { ...p, growth, stage };
+    });
+    setCelebrate((c) => c + 1);
+  }
+
   function buyFood(foodId: string) {
     const food = FOODS.find((f) => f.id === foodId);
     if (!food || gems < food.cost) return;
@@ -341,6 +369,7 @@ function Gemmagotchi() {
             course={course}
             module={activeModule}
             pet={pet}
+            hasMasterclass={inventory.owned.includes("masterclass")}
             onCorrect={handleCorrect}
             onLessonComplete={handleLessonComplete}
             onExit={() => setActiveModule(null)}
@@ -381,6 +410,16 @@ function Gemmagotchi() {
           </>
         )}
       </main>
+
+      {gemsOpen && (
+        <GemSanctuary
+          gems={gems}
+          pet={pet}
+          inventory={inventory}
+          onRedeem={redeemReward}
+          onClose={() => setGemsOpen(false)}
+        />
+      )}
 
       {socraticOpen && (
         <SocraticModal pet={pet} course={course} onClose={() => setSocraticOpen(false)} />
