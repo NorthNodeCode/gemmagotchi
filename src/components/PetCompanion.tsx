@@ -1,23 +1,41 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { AnimalSprite, ItemSprite, PixelSprite } from "./PixelSprite";
-import { EGG_FOR_SPECIES, SPECIES } from "../lib/sprites";
-import { growthProgress, moodFor, type PetState } from "../lib/petState";
+import { EGG_FOR_SPECIES, FACING_VIEWER, SPECIES, sleepRowFor } from "../lib/sprites";
+import { growthProgress, moodFor, type PetMood, type PetState } from "../lib/petState";
 
-const MOOD_COPY: Record<string, string> = {
+const MOOD_COPY: Record<PetMood, string> = {
   thriving: "Thriving",
   content: "Content",
   hungry: "Peckish",
-  sleepy: "Napping",
+  sleepy: "Fast asleep",
 };
 
 /**
- * Which row of the animal sheet to draw. Row 4 is the head-down grazing pose,
- * which reads as dozing when the pet has been left alone for a while.
+ * Every mood has to look different, or the pet's state is invisible and the
+ * whole feedback loop is just two progress bars. Sleeping uses the sheet's
+ * curled eyes-shut pose; the others differ in liveliness, not in size.
+ *
+ * Scale changes are reserved for growth. A pet that swells when it is *worse
+ * off* reads as a reward, which is exactly backwards.
  */
-function rowForMood(mood: string): number {
-  return mood === "sleepy" ? 4 : 0;
+interface MoodLook {
+  /** Idle keyframes — vertical motion only, never scale. */
+  bob: number[];
+  /** Seconds per idle cycle. Slower = sleepier. */
+  duration: number;
+  /** Sprite frame rate. */
+  fps: number;
+  opacity: number;
+  saturation: number;
 }
+
+const MOOD_LOOK: Record<PetMood, MoodLook> = {
+  thriving: { bob: [0, -7, 0], duration: 1.9, fps: 5, opacity: 1, saturation: 1.08 },
+  content: { bob: [0, -5, 0], duration: 2.4, fps: 4, opacity: 1, saturation: 1 },
+  hungry: { bob: [0, -2.5, 0], duration: 3.2, fps: 2.5, opacity: 0.9, saturation: 0.75 },
+  sleepy: { bob: [0, 1.5, 0], duration: 4.4, fps: 1.5, opacity: 0.72, saturation: 0.45 },
+};
 
 interface Props {
   pet: PetState;
@@ -38,6 +56,8 @@ export const PetCompanion: React.FC<Props> = ({
   onClick,
 }) => {
   const mood = moodFor(pet.health);
+  const look = MOOD_LOOK[mood];
+  const asleep = mood === "sleepy" && pet.stage !== "egg";
   const [pop, setPop] = useState(false);
 
   useEffect(() => {
@@ -77,18 +97,16 @@ export const PetCompanion: React.FC<Props> = ({
           onClick={onClick}
           animate={
             pop
-              ? { scale: [1, 1.25, 1], y: [0, -14, 0] }
-              : mood === "sleepy"
-              ? { y: [0, 1.5, 0] }
-              : { y: [0, -5, 0] }
+              ? { scale: [1, 1.25, 1], y: [0, -14, 0], opacity: 1, filter: "saturate(1.2)" }
+              : { y: look.bob, opacity: look.opacity, filter: `saturate(${look.saturation})` }
           }
           transition={
             pop
               ? { duration: 0.7, ease: "easeOut" }
-              : { repeat: Infinity, duration: mood === "sleepy" ? 4 : 2.4, ease: "easeInOut" }
+              : { repeat: Infinity, duration: look.duration, ease: "easeInOut" }
           }
           className="relative cursor-pointer bg-transparent"
-          aria-label={`${pet.name} the ${pet.species}`}
+          aria-label={`${pet.name} the ${pet.species}, ${MOOD_COPY[mood].toLowerCase()}`}
         >
           {pet.stage === "egg" ? (
             <EggSprite species={pet.species} size={size} />
@@ -96,12 +114,14 @@ export const PetCompanion: React.FC<Props> = ({
             <AnimalSprite
               species={pet.species}
               stage={pet.stage === "adult" ? "adult" : "baby"}
-              row={rowForMood(mood)}
+              row={asleep ? sleepRowFor(pet.species) : FACING_VIEWER}
               size={size}
-              fps={mood === "sleepy" ? 2 : 4}
+              fps={look.fps}
             />
           )}
         </motion.button>
+
+        {asleep && !pop && <SleepZs size={size} />}
 
         {/* Hearts burst out of the pet when it grows. */}
         <AnimatePresence>
@@ -174,6 +194,28 @@ const Bar: React.FC<{ label: string; value: number; colour: string }> = ({
         transition={{ duration: 0.5 }}
       />
     </div>
+  </div>
+);
+
+/** Three z's drifting up off a sleeping pet. Unmistakable, and costs nothing. */
+const SleepZs: React.FC<{ size: number }> = ({ size }) => (
+  <div
+    className="pointer-events-none absolute z-10"
+    style={{ left: `calc(50% + ${size * 0.16}px)`, top: `calc(50% - ${size * 0.2}px)` }}
+    aria-hidden
+  >
+    {[0, 1, 2].map((i) => (
+      <motion.span
+        key={i}
+        className="absolute font-serif font-bold text-[#7A837C]"
+        style={{ fontSize: 11 + i * 5 }}
+        initial={{ opacity: 0, x: 0, y: 0 }}
+        animate={{ opacity: [0, 0.85, 0], x: [0, 8 + i * 5], y: [0, -22 - i * 12] }}
+        transition={{ repeat: Infinity, duration: 3.4, delay: i * 1.1, ease: "easeOut" }}
+      >
+        z
+      </motion.span>
+    ))}
   </div>
 );
 

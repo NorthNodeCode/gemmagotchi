@@ -8,6 +8,7 @@ import { TutorRoom } from "./components/TutorRoom";
 import { StoreView } from "./components/StoreView";
 import { TrajectoryView } from "./components/TrajectoryView";
 import { RescueModal } from "./components/RescueModal";
+import { DevSprites } from "./components/DevSprites";
 import {
   buildCurriculum,
   fetchNudge,
@@ -48,6 +49,14 @@ function load<T>(key: string, fallback: T): T {
 }
 
 export default function App() {
+  // Sprite inspector lives off the main app entirely — no state, no onboarding.
+  if (typeof location !== "undefined" && location.pathname === "/dev/sprites") {
+    return <DevSprites />;
+  }
+  return <Gemmagotchi />;
+}
+
+function Gemmagotchi() {
   const [learner, setLearner] = useState<Learner | null>(() => load<Learner | null>(KEYS.learner, null));
   const [pet, setPet] = useState<PetState | null>(() => load<PetState | null>(KEYS.pet, null));
   const [course, setCourse] = useState<Course | null>(() => load<Course | null>(KEYS.course, null));

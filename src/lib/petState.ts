@@ -59,10 +59,15 @@ export function stageFor(growth: number): PetStage {
   return "egg";
 }
 
+/**
+ * Mood bands are tuned so that each one is reachable within a few days away —
+ * a state the learner never sees may as well not exist, and the drooping is
+ * the entire feedback signal.
+ */
 export function moodFor(health: number): PetMood {
-  if (health >= 80) return "thriving";
-  if (health >= 55) return "content";
-  if (health >= 30) return "hungry";
+  if (health >= 85) return "thriving";
+  if (health >= 65) return "content";
+  if (health >= 40) return "hungry";
   return "sleepy";
 }
 
@@ -72,12 +77,14 @@ export function daysBetween(from: number, to: number): number {
 }
 
 /**
- * Health lost per day away. Gentle on purpose, and it never drops the pet
- * below `HEALTH_FLOOR` — neglect makes the pet sleepy, never doomed. Removing
+ * Health lost per day away. Large enough that a single missed day is visible
+ * (one day drops out of "thriving", two reads as peckish, four as asleep) —
+ * an invisible consequence is not a consequence. It never drops the pet below
+ * `HEALTH_FLOOR`, though: neglect makes the pet sleepy, never doomed. Removing
  * the possibility of losing the pet removes the dread that makes people avoid
  * opening the app at all.
  */
-const DECAY_PER_DAY = 12;
+const DECAY_PER_DAY = 18;
 const HEALTH_FLOOR = 15;
 /** A streak survives one missed day. Everyone has an off day. */
 export const GRACE_DAYS = 1;

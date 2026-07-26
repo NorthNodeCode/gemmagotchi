@@ -9,7 +9,9 @@
  *   row 1  facing away
  *   row 2  facing left
  *   row 3  facing right
- *   row 4  head-down / grazing    <- reads as eating or sleeping
+ *   row 4  curled up, eyes shut   <- sleeping (verified on /dev/sprites for
+ *                                    all six species; frames barely differ,
+ *                                    so animating it reads as breathing)
  *
  * Avatar walk sheets are 256x128: 8 frames across, 4 direction rows, 32px cells.
  * Column 0 of each row is the standing pose.
@@ -24,6 +26,12 @@ export interface SpeciesSpec {
   babyCell: number;
   babyFile: string;
   adultFile: string;
+  /**
+   * Row that reads as asleep for this species. Row 4 is head-down for most of
+   * the pack, but not every animal was drawn the same way, so this is an
+   * explicit per-species value verified on /dev/sprites rather than assumed.
+   */
+  sleepRow?: number;
 }
 
 export type PetSpecies = "chicken" | "bunny" | "pig" | "sheep" | "goat" | "cow";
@@ -89,7 +97,10 @@ export const FACING_VIEWER = 0;
 export const FACING_AWAY = 1;
 export const FACING_LEFT = 2;
 export const FACING_RIGHT = 3;
-export const GRAZING = 4;
+export const SLEEPING = 4;
+
+/** Sleep pose row for a species — row 4 everywhere, overridable per species. */
+export const sleepRowFor = (species: PetSpecies) => SPECIES[species]?.sleepRow ?? SLEEPING;
 
 // ---------------------------------------------------------------------------
 // Items sheet — 10 columns x 12 rows of 16px cells.
