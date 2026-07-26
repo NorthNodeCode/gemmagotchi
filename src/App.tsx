@@ -13,6 +13,7 @@ import { CoursesView } from "./components/CoursesView";
 import { SocraticModal } from "./components/SocraticModal";
 import { SprintRoom } from "./components/SprintRoom";
 import { DrillsView } from "./components/DrillsView";
+import { AddTopicModal, type TopicDraft } from "./components/AddTopicModal";
 import {
   buildCurriculum,
   fetchNudge,
@@ -21,6 +22,15 @@ import {
   prefetchLesson,
 } from "./services/api";
 import { applyDecay, createPet, feedPet, recordStudy, stageFor, type PetState } from "./lib/petState";
+import {
+  allModules,
+  allNotes,
+  markModuleComplete,
+  migrateCourse,
+  nextModuleFor,
+  titleFromFilename,
+  topicOf,
+} from "./lib/course";
 import { GemSanctuary, type Reward } from "./components/GemSanctuary";
 import { advanceDays, now, offsetDays, resetClock } from "./lib/clock";
 import { FOODS } from "./lib/sprites";
@@ -65,9 +75,9 @@ function load<T>(key: string, fallback: T): T {
  */
 function loadCourses(): Course[] {
   const courses = load<Course[]>(KEYS.courses, []);
-  if (courses.length) return courses;
+  if (courses.length) return courses.map(migrateCourse);
   const legacy = load<Course | null>(KEYS.course, null);
-  return legacy ? [legacy] : [];
+  return legacy ? [migrateCourse(legacy)] : [];
 }
 
 export default function App() {
@@ -98,6 +108,7 @@ function Gemmagotchi() {
   const [activeModule, setActiveModule] = useState<SubLesson | null>(null);
   const [sprinting, setSprinting] = useState(false);
   const [building, setBuilding] = useState(false);
+  const [planProgress, setPlanProgress] = useState<{ current: number; total: number; title: string } | null>(null);
   const [provider, setProvider] = useState<ProviderInfo | null>(null);
   const [clockDays, setClockDays] = useState(() => offsetDays());
 
@@ -105,6 +116,7 @@ function Gemmagotchi() {
   const [nudgeLoading, setNudgeLoading] = useState(false);
   const [celebrate, setCelebrate] = useState(0);
 
+  const [addTopicOpen, setAddTopicOpen] = useState(false);
   const [socraticOpen, setSocraticOpen] = useState(false);
   const [gemsOpen, setGemsOpen] = useState(false);
 
@@ -146,45 +158,123 @@ function Gemmagotchi() {
     [courses, activeCourseId]
   );
 
-  const nextModule = useMemo(() => course?.modules.find((m) => !m.completed) ?? null, [course]);
+  const nextModule = useMemo(() => nextModuleFor(course), [course]);
 
   const updateCourse = useCallback((id: string, fn: (c: Course) => Course) => {
     setCourses((all) => all.map((c) => (c.id === id ? fn(c) : c)));
   }, []);
 
-  /** Plan a course from raw material. Shared by onboarding and "Add module". */
+  /**
+   * Plan ONE topic. Sending a single week's material rather than the whole
+   * course keeps the prompt small, which matters a lot on a laptop model, and
+   * it means each week's plan is about that week rather than a blur.
+   */
+  const planTopicPlan = useCallback(
+    async (input: { subject: string; examDate?: string; notes: string }) => {
+      return buildCurriculum({
+        notes: input.notes,
+        subject: input.subject,
+        examDate: input.examDate ?? "",
+        minutesPerDay,
+      });
+    },
+    [minutesPerDay]
+  );
+
+  /** Create a course from its first topic's material. */
   const planCourse = useCallback(
-    async (req: { subject: string; examDate: string; notes: string; minutesPerDay?: number }) => {
+    async (req: {
+      subject: string;
+      examDate: string;
+      notes: string;
+      files?: string[];
+      topicTitle?: string;
+      minutesPerDay?: number;
+    }) => {
       const t = now();
-      const plan = await buildCurriculum({
-        notes: req.notes,
+      const plan = await planTopicPlan({
         subject: req.subject,
         examDate: req.examDate,
-        minutesPerDay: req.minutesPerDay ?? minutesPerDay,
+        notes: req.notes,
       });
       const created: Course = {
         id: `course-${t}`,
-        title: plan.title,
+        title: req.subject,
         subject: req.subject,
         description: plan.description,
         examDate: req.examDate,
-        notes: req.notes,
         estimatedWeeks: plan.estimatedWeeks,
-        modules: plan.modules,
+        topics: [
+          {
+            id: `topic-${t}`,
+            title: req.topicTitle || plan.title,
+            week: 1,
+            notes: req.notes,
+            files: req.files ?? [],
+            modules: plan.modules,
+          },
+        ],
       };
       setCourses((all) => [...all, created]);
       setActiveCourseId(created.id);
       return created;
     },
-    [minutesPerDay]
+    [planTopicPlan]
   );
 
-  async function addCourse(req: { subject: string; examDate: string; notes: string }) {
+  async function addCourse(req: { subject: string; examDate: string; notes: string; files?: string[] }) {
     setBuilding(true);
     try {
       await planCourse(req);
       setTab("plan");
     } finally {
+      setBuilding(false);
+    }
+  }
+
+  /**
+   * Add topics to an existing course. Several files become several weeks, and
+   * they are planned one after another because Ollama serialises requests
+   * anyway — parallelising would only make the progress display lie.
+   */
+  async function addTopics(
+    courseId: string,
+    batch: Array<{ title: string; notes: string; files: string[] }>
+  ) {
+    const target = courses.find((c) => c.id === courseId);
+    if (!target) return;
+    let week = Math.max(0, ...target.topics.map((t) => t.week));
+
+    setBuilding(true);
+    try {
+      for (let i = 0; i < batch.length; i++) {
+        const item = batch[i];
+        week += 1;
+        setPlanProgress({ current: i + 1, total: batch.length, title: item.title });
+        const plan = await planTopicPlan({
+          subject: target.subject,
+          examDate: target.examDate,
+          notes: item.notes,
+        });
+        const topicWeek = week;
+        updateCourse(courseId, (c) => ({
+          ...c,
+          topics: [
+            ...c.topics,
+            {
+              id: `topic-${now()}-${i}`,
+              title: item.title || plan.title,
+              week: topicWeek,
+              notes: item.notes,
+              files: item.files,
+              modules: plan.modules,
+            },
+          ],
+        }));
+      }
+      setTab("plan");
+    } finally {
+      setPlanProgress(null);
       setBuilding(false);
     }
   }
@@ -207,9 +297,9 @@ function Gemmagotchi() {
     prefetchLesson({
       moduleTitle: nextModule.title,
       sourceExcerpt: nextModule.sourceExcerpt,
-      notes: course.notes,
+      notes: topicOf(course, nextModule.id)?.notes ?? allNotes(course),
       subject: course.subject,
-      previousLessons: course.modules.filter((m) => m.completed).map((m) => m.title),
+      previousLessons: allModules(course).filter((m) => m.completed).map((m) => m.title),
     });
   }, [course?.id, nextModule?.id, activeModule]);
 
@@ -275,12 +365,9 @@ function Gemmagotchi() {
   }
 
   function handleLessonComplete(moduleId: string, score: number) {
-    const finished = course?.modules.find((m) => m.id === moduleId);
+    const finished = course ? allModules(course).find((m) => m.id === moduleId) : undefined;
     if (course) {
-      updateCourse(course.id, (c) => ({
-        ...c,
-        modules: c.modules.map((m) => (m.id === moduleId ? { ...m, completed: true } : m)),
-      }));
+      updateCourse(course.id, (c) => markModuleComplete(c, moduleId));
     }
     // Finishing counts for more than any single answer inside it.
     setPet((p) => {
@@ -470,7 +557,14 @@ function Gemmagotchi() {
                 onOpenPlan={() => setTab("plan")}
               />
             )}
-            {tab === "plan" && <PlanView course={course} onStart={setActiveModule} />}
+            {tab === "plan" && (
+              <PlanView
+                course={course}
+                onStart={setActiveModule}
+                onAddTopic={() => setAddTopicOpen(true)}
+                onBigReview={() => setTab("drills")}
+              />
+            )}
             {tab === "drills" && (
               <DrillsView
                 course={course}
@@ -504,6 +598,20 @@ function Gemmagotchi() {
           inventory={inventory}
           onRedeem={redeemReward}
           onClose={() => setGemsOpen(false)}
+        />
+      )}
+
+      {addTopicOpen && course && (
+        <AddTopicModal
+          courseSubject={course.subject}
+          nextWeek={Math.max(0, ...course.topics.map((t) => t.week)) + 1}
+          busy={building}
+          progress={planProgress}
+          onAdd={async (drafts: TopicDraft[]) => {
+            await addTopics(course.id, drafts);
+            setAddTopicOpen(false);
+          }}
+          onClose={() => setAddTopicOpen(false)}
         />
       )}
 

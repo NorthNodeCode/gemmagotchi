@@ -5,6 +5,7 @@ import { Loader2, ArrowRight, Check, X, Minus, BookOpen } from "lucide-react";
 import { PetCompanion } from "./PetCompanion";
 import { Markdown } from "./Markdown";
 import { fetchChecks, fetchLesson, gradeAnswer } from "../services/api";
+import { allModules, allNotes, topicOf } from "../lib/course";
 import type { CheckQuestion, Course, GradeResult, PetState, SubLesson } from "../types";
 
 /**
@@ -59,9 +60,9 @@ export const TutorRoom: React.FC<Props> = ({
     const input = {
       moduleTitle: module.title,
       sourceExcerpt: module.sourceExcerpt,
-      notes: course.notes,
+      notes: topicOf(course, module.id)?.notes ?? allNotes(course),
       subject: course.subject,
-      previousLessons: course.modules.filter((m) => m.completed).map((m) => m.title),
+      previousLessons: allModules(course).filter((m) => m.completed).map((m) => m.title),
     };
 
     setPhase("loading");

@@ -7,6 +7,7 @@ import { daysBetween, GRACE_DAYS } from "../lib/petState";
 import { now } from "../lib/clock";
 import { Play, LifeBuoy, Loader2, Sparkles, Timer, Clock, Flame, Heart, TrendingUp } from "lucide-react";
 import { moodFor } from "../lib/petState";
+import { courseProgress } from "../lib/course";
 import type { Course, Nudge, PetState, StudyLogEntry, SubLesson } from "../types";
 
 interface Props {
@@ -48,8 +49,9 @@ export const TodayView: React.FC<Props> = ({
 }) => {
   const away = daysBetween(pet.lastStudiedAt, now());
   const isComeback = away > GRACE_DAYS;
-  const done = course?.modules.filter((m) => m.completed).length ?? 0;
-  const total = course?.modules.length ?? 0;
+  const cp = course ? courseProgress(course) : { done: 0, total: 0, pct: 0 };
+  const done = cp.done;
+  const total = cp.total;
 
   const totalMins = studyLog.reduce((sum, e) => sum + (e.durationMins ?? 0), 0);
   const sessions = studyLog.length;

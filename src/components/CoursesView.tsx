@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { MaterialInput, type AttachedFile } from "./MaterialInput";
+import { courseProgress, orderedTopics } from "../lib/course";
 import type { Course } from "../types";
 
 /**
@@ -108,9 +109,8 @@ const CourseCard: React.FC<{
   onDelete: () => void;
   onOpenPlan: () => void;
 }> = ({ course, active, onSetActive, onDelete, onOpenPlan }) => {
-  const done = course.modules.filter((m) => m.completed).length;
-  const total = course.modules.length || 1;
-  const pct = Math.round((done / total) * 100);
+  const { done, total, pct } = courseProgress(course);
+  const weeks = orderedTopics(course).length;
 
   return (
     <motion.div
@@ -143,7 +143,7 @@ const CourseCard: React.FC<{
 
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#7A837C]">
         <span className="flex items-center gap-1">
-          <BookOpen className="h-3 w-3" /> {course.modules.length} sub-lessons
+          <BookOpen className="h-3 w-3" /> {weeks} {weeks === 1 ? "week" : "weeks"} · {total} sub-lessons
         </span>
         {course.examDate && (
           <span className="flex items-center gap-1">
@@ -156,7 +156,7 @@ const CourseCard: React.FC<{
         <div className="mb-1 flex justify-between text-[10px] font-bold uppercase tracking-wider text-[#7A837C]">
           <span>Progress</span>
           <span>
-            {done}/{course.modules.length}
+            {done}/{total}
           </span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-[#E5E2D9]">

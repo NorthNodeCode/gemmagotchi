@@ -4,6 +4,7 @@ import { BookOpen, Bot, HelpCircle, Send, Sparkles, X, Zap } from "lucide-react"
 import { Markdown } from "./Markdown";
 import { AnimalSprite } from "./PixelSprite";
 import { moodFor, type PetState } from "../lib/petState";
+import { allNotes, currentTopic } from "../lib/course";
 import type { Course } from "../types";
 
 /**
@@ -75,7 +76,7 @@ export const SocraticModal: React.FC<Props> = ({ pet, course, onClose }) => {
           mode,
           askPet,
           petName: pet.name,
-          notes: course?.notes,
+          notes: course ? currentTopic(course)?.notes ?? allNotes(course) : undefined,
           history: [...history, userMsg].map((m) => ({ sender: m.sender, text: m.text })),
           pet: {
             species: pet.species,

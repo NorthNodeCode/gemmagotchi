@@ -30,16 +30,37 @@ export interface SubLesson {
   completed: boolean;
 }
 
+/**
+ * A week's worth of a module — one lecture, or a couple covering one theme.
+ * This is the unit a student actually thinks in ("week 4 was Fourier"), and
+ * it is what gets planned, taught and revised as a block.
+ */
+export interface Topic {
+  id: string;
+  title: string;
+  /** Teaching week. Ordering everywhere is by this, not by array position. */
+  week: number;
+  /** This topic's own material — its lectures, not the whole course's. */
+  notes: string;
+  /** Display names of the lecture files this topic was built from. */
+  files: string[];
+  modules: SubLesson[];
+  /** Set while its plan is still being generated. */
+  planning?: boolean;
+}
+
 export interface Course {
   id: string;
   title: string;
   subject: string;
   description: string;
   examDate?: string;
-  /** The learner's own pasted material — everything is taught from this. */
-  notes: string;
   estimatedWeeks: number;
-  modules: SubLesson[];
+  topics: Topic[];
+  /** @deprecated Pre-topics shape; migrated into `topics` on load. */
+  notes?: string;
+  /** @deprecated Pre-topics shape; migrated into `topics` on load. */
+  modules?: SubLesson[];
 }
 
 export interface LessonPayload {

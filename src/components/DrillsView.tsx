@@ -5,6 +5,7 @@ import { ArrowRight, Layers, Loader2, RotateCcw, Target, Zap } from "lucide-reac
 import { QuestionCard } from "./TutorRoom";
 import { ItemSprite } from "./PixelSprite";
 import { ITEM } from "../lib/sprites";
+import { allModules, allNotes, orderedTopics, topicOf } from "../lib/course";
 import type { CheckQuestion, Course, SubLesson } from "../types";
 
 /**
@@ -52,8 +53,10 @@ export const DrillsView: React.FC<Props> = ({
 
     const notes =
       scope.kind === "course"
-        ? course.notes
-        : scope.module.sourceExcerpt || course.notes;
+        ? allNotes(course)
+        : topicOf(course, scope.module.id)?.notes ||
+          scope.module.sourceExcerpt ||
+          allNotes(course);
 
     try {
       const res = await fetch("/api/ai/drill", {
@@ -66,7 +69,7 @@ export const DrillsView: React.FC<Props> = ({
           scope: scope.kind === "course" ? "course" : "module",
           topics:
             scope.kind === "course"
-              ? course.modules.map((m) => m.title)
+              ? orderedTopics(course).map((t) => t.title)
               : [scope.module.title],
         }),
       });
@@ -193,8 +196,9 @@ export const DrillsView: React.FC<Props> = ({
   }
 
   // setup
-  const remaining = course.modules.filter((m) => !m.completed);
-  const done = course.modules.filter((m) => m.completed);
+  const modules = allModules(course);
+  const remaining = modules.filter((m) => !m.completed);
+  const done = modules.filter((m) => m.completed);
 
   return (
     <div>
@@ -236,7 +240,7 @@ export const DrillsView: React.FC<Props> = ({
         <div className="flex-1">
           <h3 className="font-serif text-lg font-bold">Big review</h3>
           <p className="text-xs text-[#7A837C]">
-            Questions spanning all {course.modules.length} sub-lessons of {course.subject},
+            Questions spanning all {orderedTopics(course).length} weeks of {course.subject},
             including ones that connect two topics.
           </p>
         </div>

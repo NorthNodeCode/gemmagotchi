@@ -23,13 +23,14 @@ Gemmagotchi's one design law: **consequences without shame.** Your pet visibly d
 - **The pet:** hatches from its egg after 3 correct answers, grows to an adult at 12. Every mood is visually distinct — a thriving pet bounces; a neglected one is dimmed, desaturated, curled up asleep with drifting z's. Scale is reserved for growth alone: a pet that swells when things get worse would read as a reward.
 - **Rescue:** a "Can't start?" button generates a 2-minute micro-task that is impossible to fail — the smallest possible re-entry into studying.
 - **Socratic partner:** a multi-turn chat with three modes (Socratic questioning, explain-with-a-real-example, active-recall drill), grounded in the active course's notes. A quick-chip lets you talk to the pet itself, which answers in character, in its shame-free voice, from its live state.
+- **Drills:** for the days you won't sit through a lesson but will answer questions. Pick a topic, or take the **big review** — a set spanning every sub-lesson, deliberately including questions that force you to connect two of them. Distractors are instructed to be the mistakes real students make, not obviously wrong options.
 - **Sprint mode:** a focus timer the pet sits beside, nudging every five minutes; finishing pays gems and health per minute and counts toward the streak like a lesson.
 - **Economy:** correct answers and comebacks earn gems; the Gem Sanctuary spends them only on the pet (heal, growth surge, a permanent "go deeper" tutor unlock) — never on skipping work.
 - **Multiple modules** (university-style), a demo clock to fast-forward days, and a 4-week trajectory forecast chart.
 
 ## How Gemma 4 is used — specifically
 
-Every generation goes through **one seam** (`server/gemma.ts`) that knows exactly two model strings:
+Every generation goes through **one seam** (`server/gemma.ts`) that knows exactly two model strings — nine distinct jobs, one place a model is ever called:
 
 | Provider | Model | Transport |
 |---|---|---|
