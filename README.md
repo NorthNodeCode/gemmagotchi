@@ -1,11 +1,11 @@
 # Gemmagotchi
 
-A Gemma 4 study companion that fights procrastination — by giving you something
+A Gemma 4 study companion that fights procrastination; by giving you something
 that is *glad to see you*.
 
-You adopt a pixel-art pet from an egg. Your course notes become a study plan.
+You adopt an animal and raise it from an egg. Your course notes become a study plan.
 Gemma 4 teaches you one sub-lesson at a time and grades your answers. The pet
-grows when you learn and droops when you disappear — but it **never** shames
+grows when you learn and drops when you disappear but it **never** shames
 you, because shame is what causes procrastination in the first place.
 
 ## Run it in 3 minutes
@@ -74,4 +74,8 @@ gems that scale with how long you were gone.
 
 ## Credits
 
-Pixel art by **shubibubi** (Cozy People / Cozy Animals / Cozy Farm packs).
+Pixel art by **shubibubi**.
+Developed during the GDG Gemma 4 Hackathon Sprint by:
+Abdurrehman Sajid
+Favour Odeyale
+Arik Subedi
