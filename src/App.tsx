@@ -8,7 +8,13 @@ import { TutorRoom } from "./components/TutorRoom";
 import { StoreView } from "./components/StoreView";
 import { TrajectoryView } from "./components/TrajectoryView";
 import { RescueModal } from "./components/RescueModal";
-import { buildCurriculum, fetchNudge, fetchProvider, fetchRescue } from "./services/api";
+import {
+  buildCurriculum,
+  fetchNudge,
+  fetchProvider,
+  fetchRescue,
+  prefetchLesson,
+} from "./services/api";
 import { applyDecay, createPet, feedPet, recordStudy, type PetState } from "./lib/petState";
 import { advanceDays, now, offsetDays, resetClock } from "./lib/clock";
 import { FOODS } from "./lib/sprites";
@@ -90,6 +96,22 @@ export default function App() {
   }, [settlePet, clockDays]);
 
   const nextModule = useMemo(() => course?.modules.find((m) => !m.completed) ?? null, [course]);
+
+  /**
+   * Warm the next sub-lesson in the background. Generation on a local model
+   * takes a while, so paying that cost while the learner is reading the
+   * dashboard makes pressing Start feel immediate.
+   */
+  useEffect(() => {
+    if (!course || !nextModule || activeModule) return;
+    prefetchLesson({
+      moduleTitle: nextModule.title,
+      sourceExcerpt: nextModule.sourceExcerpt,
+      notes: course.notes,
+      subject: course.subject,
+      previousLessons: course.modules.filter((m) => m.completed).map((m) => m.title),
+    });
+  }, [course?.id, nextModule?.id, activeModule]);
 
   // Ask the pet for a line whenever its situation meaningfully changes.
   useEffect(() => {

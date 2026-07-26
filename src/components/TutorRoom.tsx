@@ -4,7 +4,7 @@ import confetti from "canvas-confetti";
 import { Loader2, ArrowRight, Check, X, Minus, BookOpen } from "lucide-react";
 import { PetCompanion } from "./PetCompanion";
 import { Markdown } from "./Markdown";
-import { fetchLesson, gradeAnswer } from "../services/api";
+import { fetchChecks, fetchLesson, gradeAnswer } from "../services/api";
 import type { CheckQuestion, Course, GradeResult, PetState, SubLesson } from "../types";
 
 /**
@@ -45,21 +45,32 @@ export const TutorRoom: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null);
   const lessonRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * The prose and the questions are fetched independently so the learner can
+   * start reading the moment the lesson lands, while the checks are still
+   * being written. On a laptop-sized model that difference is a minute or more
+   * of staring at a spinner.
+   */
   useEffect(() => {
     let cancelled = false;
-    setPhase("loading");
-    setError(null);
-    fetchLesson({
+    const input = {
       moduleTitle: module.title,
       sourceExcerpt: module.sourceExcerpt,
       notes: course.notes,
       subject: course.subject,
       previousLessons: course.modules.filter((m) => m.completed).map((m) => m.title),
-    })
-      .then((payload) => {
+    };
+
+    setPhase("loading");
+    setError(null);
+    setQuestions([]);
+    setQIndex(0);
+    setScore(0);
+
+    fetchLesson(input)
+      .then((text) => {
         if (cancelled) return;
-        setLesson(payload.lesson);
-        setQuestions(payload.questions);
+        setLesson(text);
         setPhase("teaching");
       })
       .catch((e) => {
@@ -67,6 +78,11 @@ export const TutorRoom: React.FC<Props> = ({
         setError(e?.message || "The tutor could not be reached.");
         setPhase("idle");
       });
+
+    fetchChecks(input)
+      .then((qs) => !cancelled && setQuestions(qs))
+      .catch(() => {});
+
     return () => {
       cancelled = true;
     };
@@ -139,9 +155,18 @@ export const TutorRoom: React.FC<Props> = ({
                 <button
                   onClick={() => setPhase("checking")}
                   disabled={questions.length === 0}
-                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5E7161] py-3.5 text-sm font-bold text-white transition-all hover:bg-[#4E5F51] disabled:opacity-40"
+                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5E7161] py-3.5 text-sm font-bold text-white transition-all hover:bg-[#4E5F51] disabled:opacity-50"
                 >
-                  I've read this — check my understanding <ArrowRight className="h-4 w-4" />
+                  {questions.length === 0 ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Read on — your questions are
+                      being written…
+                    </>
+                  ) : (
+                    <>
+                      I've read this — check my understanding <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
                 </button>
               )}
             </div>

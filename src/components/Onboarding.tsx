@@ -148,12 +148,16 @@ export const Onboarding: React.FC<{
                 </label>
               </div>
 
-              <label className="mt-4 block">
+              <div className="mt-4">
                 <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#7A837C]">
+                  <label
+                    htmlFor="notes-field"
+                    className="text-xs font-bold uppercase tracking-wider text-[#7A837C]"
+                  >
                     Your notes
-                  </span>
+                  </label>
                   <button
+                    type="button"
                     onClick={() => {
                       setNotes(SAMPLE_NOTES);
                       if (!subject) setSubject("Memory and Spaced Repetition");
@@ -164,6 +168,7 @@ export const Onboarding: React.FC<{
                   </button>
                 </div>
                 <textarea
+                  id="notes-field"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={9}
@@ -173,7 +178,7 @@ export const Onboarding: React.FC<{
                 <div className="mt-1 text-right text-[11px] text-[#7A837C]">
                   {notes.trim().length} characters
                 </div>
-              </label>
+              </div>
 
               <label className="mt-2 block">
                 <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-[#7A837C]">

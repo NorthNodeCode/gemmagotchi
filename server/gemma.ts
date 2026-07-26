@@ -118,8 +118,8 @@ export async function activeProvider(): Promise<{ provider: string; model: strin
   const local = await isLocalAvailable();
   const hosted = !!process.env.GEMINI_API_KEY;
 
-  if (CONFIGURED_PROVIDER === "local" || (CONFIGURED_PROVIDER === "auto" && local)) {
-    if (local) return { provider: "local", model: GEMMA_MODEL_LOCAL, ready: true };
+  if (CONFIGURED_PROVIDER === "local" && local) {
+    return { provider: "local", model: GEMMA_MODEL_LOCAL, ready: true };
   }
   if (hosted) return { provider: "hosted", model: GEMMA_MODEL_HOSTED, ready: true };
   if (local) return { provider: "local", model: GEMMA_MODEL_LOCAL, ready: true };
@@ -135,15 +135,24 @@ async function generateLocal(opts: GenerateOptions): Promise<string> {
   if (opts.system) messages.push({ role: "system", content: opts.system });
   messages.push({ role: "user", content: opts.prompt });
 
-  const res = await fetch(`${OLLAMA_BASE_URL}/v1/chat/completions`, {
+  // Ollama's native endpoint rather than its OpenAI-compatible one: that shim
+  // has no top_k, and Gemma 4's recommended sampling includes top_k = 64.
+  // It also lets us turn thinking off explicitly, which matters on a laptop
+  // where hidden reasoning tokens cost real seconds.
+  const res = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: "Bearer ollama" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: GEMMA_MODEL_LOCAL,
       messages,
-      temperature: TEMPERATURE,
-      top_p: TOP_P,
-      max_tokens: opts.maxTokens ?? 2048,
+      stream: false,
+      think: !!opts.thinking,
+      options: {
+        temperature: TEMPERATURE,
+        top_p: TOP_P,
+        top_k: TOP_K,
+        num_predict: opts.maxTokens ?? 1024,
+      },
     }),
   });
 
@@ -151,7 +160,9 @@ async function generateLocal(opts: GenerateOptions): Promise<string> {
     throw new Error(`Ollama returned ${res.status}: ${await res.text()}`);
   }
   const data: any = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
+  // The reasoning block arrives in a separate `thinking` field, so the answer
+  // is never contaminated by it.
+  return data.message?.content ?? "";
 }
 
 // ---------------------------------------------------------------------------
@@ -219,9 +230,13 @@ export async function generate(opts: GenerateOptions): Promise<GenerateResult> {
     if (hostedReady) order.push("hosted");
     if (local) order.push("local");
   } else {
-    // auto — prefer local (no quota, no network), fall back to hosted.
-    if (local) order.push("local");
+    // auto — prefer hosted when a key is configured. The 26B mixture-of-experts
+    // model on Google's infrastructure answers several times faster than a 4B
+    // model on a laptop CPU, which is the difference between a usable tutor and
+    // a spinner. Local is the fallback that keeps the app working with no key,
+    // no network and no quota.
     if (hostedReady) order.push("hosted");
+    if (local) order.push("local");
   }
 
   if (order.length === 0) {

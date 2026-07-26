@@ -45,7 +45,7 @@ app.post("/api/ai/curriculum", async (req, res) => {
       system: CURRICULUM_SYSTEM,
       thinking: true,
       cacheKey: "curriculum",
-      maxTokens: 3000,
+      maxTokens: 1600,
       prompt: `Build a study plan from these notes.
 
 SUBJECT: ${subject || "Untitled subject"}
@@ -57,7 +57,7 @@ NOTES:
 ${String(notes || "").slice(0, 12000)}
 """
 
-Split the material into 4 to 8 sub-lessons. Each sub-lesson teaches exactly ONE concept and must be teachable in about 5 minutes. Order them so earlier sub-lessons build the vocabulary later ones need. Front-load whatever is most likely to be examined.
+Split the material into 4 to 6 sub-lessons. Each sub-lesson teaches exactly ONE concept and must be teachable in about 5 minutes. Order them so earlier sub-lessons build the vocabulary later ones need. Front-load whatever is most likely to be examined.
 
 Return JSON of this exact shape:
 {
@@ -68,7 +68,7 @@ Return JSON of this exact shape:
     {
       "id": "mod-1",
       "title": "sub-lesson title naming the single concept",
-      "description": "one sentence on what the learner will be able to do afterwards",
+      "description": "a short phrase on what they will be able to do afterwards",
       "durationMins": number,
       "keyTakeaway": "the one sentence they must remember",
       "sourceExcerpt": "the exact 1-3 sentences from the notes this sub-lesson is built on"
@@ -121,27 +121,55 @@ SOURCE MATERIAL (the learner's own notes — teach what is here, and fill in any
 ${source}
 """`;
 
-    // Prose and questions are generated separately. Asking for a long markdown
-    // document inside a JSON string field makes smaller models cut the prose
-    // short to get to the closing brace; as free text they teach properly.
-    const [lessonResult, checks] = await Promise.all([
-      generate({
-        system: LESSON_SYSTEM,
-        cacheKey: "lesson-prose",
-        maxTokens: 2200,
-        prompt: `${context}
+    // Prose only. Asking for a long markdown document inside a JSON string
+    // field makes smaller models cut the prose short to reach the closing
+    // brace; as free text they teach properly. The check questions are a
+    // separate request (see /api/ai/checks) so the learner can start reading
+    // while they generate.
+    const lessonResult = await generate({
+      system: LESSON_SYSTEM,
+      cacheKey: "lesson-prose",
+      maxTokens: 1000,
+      prompt: `${context}
 
-Teach this one sub-lesson now, in markdown. Follow every style rule: open with the italic "*The question this answers: ...*" line, teach the concept in full detail with a concrete worked example using real values, and close with the bold "**In one sentence:** ..." line.
+Teach this one sub-lesson now, in markdown. Open with the italic "*The question this answers: ...*" line, teach the concept with a concrete worked example using real values, and close with the bold "**In one sentence:** ..." line.
 
-Write the lesson itself and nothing else — no preamble, no questions, no closing remarks.`,
-      }),
-      generateJSON<{ questions: any[] }>({
-        system: LESSON_SYSTEM,
-        cacheKey: "lesson-checks",
-        maxTokens: 2000,
-        prompt: `${context}
+Aim for 250-350 words — thorough on this ONE concept, but a single sitting's read. Write the lesson itself and nothing else: no preamble, no questions, no closing remarks.`,
+    });
 
-Write 3 questions checking whether the learner can APPLY this concept (not recall a word): two multiple-choice with four options each, then one short free-text question.
+    res.json({
+      lesson: lessonResult.text.trim(),
+      _gemma: { provider: lessonResult.provider, model: lessonResult.model, ms: lessonResult.ms },
+    });
+  } catch (error: any) {
+    console.error("[lesson]", error?.message || error);
+    res.status(200).json({
+      lesson: `## ${moduleTitle || "This concept"}\n\n*The question this answers: what is this concept and how do I use it?*\n\nThe tutor is offline right now, so here is your own material for this sub-lesson:\n\n${String(sourceExcerpt || notes || "").slice(0, 1200)}\n\n**In one sentence:** reconnect Gemma to get the full worked explanation.`,
+      _offline: true,
+    });
+  }
+});
+
+/**
+ * Check questions for a sub-lesson. Requested separately from the prose so the
+ * learner starts reading immediately instead of waiting for both.
+ */
+app.post("/api/ai/checks", async (req, res) => {
+  const { moduleTitle, sourceExcerpt, notes, subject } = req.body || {};
+  try {
+    const { data, meta } = await generateJSON<{ questions: any[] }>({
+      system: LESSON_SYSTEM,
+      cacheKey: "lesson-checks",
+      maxTokens: 1100,
+      prompt: `SUBJECT: ${subject || "the subject"}
+SUB-LESSON: ${moduleTitle}
+
+SOURCE MATERIAL:
+"""
+${String(sourceExcerpt || notes || "").slice(0, 4000)}
+"""
+
+Write 3 questions checking whether the learner can APPLY this concept (not recall a word): two multiple-choice with four options each, then one short free-text question. Keep every option under 15 words.
 
 Return JSON:
 {
@@ -151,21 +179,11 @@ Return JSON:
     { "id": "q3", "kind": "text", "question": "...", "modelAnswer": "what a full-credit answer contains" }
   ]
 }`,
-      }),
-    ]);
-
-    res.json({
-      lesson: lessonResult.text.trim(),
-      questions: checks.data?.questions || [],
-      _gemma: { provider: lessonResult.provider, model: lessonResult.model, ms: lessonResult.ms },
     });
+    res.json({ questions: data?.questions || [], _gemma: meta });
   } catch (error: any) {
-    console.error("[lesson]", error?.message || error);
-    res.status(200).json({
-      lesson: `## ${moduleTitle || "This concept"}\n\n*The question this answers: what is this concept and how do I use it?*\n\nThe tutor is offline right now, so here is your own material for this sub-lesson:\n\n${String(sourceExcerpt || notes || "").slice(0, 1200)}\n\n**In one sentence:** reconnect Gemma to get the full worked explanation.`,
-      questions: [],
-      _offline: true,
-    });
+    console.error("[checks]", error?.message || error);
+    res.json({ questions: [], _offline: true });
   }
 });
 
@@ -178,7 +196,7 @@ app.post("/api/ai/grade", async (req, res) => {
     const { data, meta } = await generateJSON({
       system: GRADER_SYSTEM,
       cacheKey: "grade",
-      maxTokens: 800,
+      maxTokens: 450,
       prompt: `Mark this answer.
 
 SUBJECT: ${subject || "the subject"}
@@ -189,7 +207,7 @@ THE LEARNER WROTE: """${String(learnerAnswer || "").slice(0, 2000)}"""
 Return JSON:
 {
   "verdict": "correct" | "partial" | "incorrect",
-  "feedback": "2-4 sentences: what was right, what was missing, and the correct answer with a concrete example",
+  "feedback": "2-3 sentences: what was right, what was missing, and the correct answer with a concrete example",
   "missedPoint": "the single most important thing they did not say, or null"
 }`,
     });
@@ -226,7 +244,7 @@ app.post("/api/ai/nudge", async (req, res) => {
     const { data, meta } = await generateJSON({
       system: `${PET_VOICE}\n\n${petStateBlock(petCtx)}`,
       cacheKey: "nudge",
-      maxTokens: 500,
+      maxTokens: 300,
       prompt: `Say something to the learner right now. They are studying ${subject || "their course"}.${nextStep ? ` The next thing on their plan is: ${nextStep}.` : ""}
 
 Offer them ONE tiny next step — small enough that it would feel silly to refuse (two minutes or less).
@@ -284,7 +302,7 @@ app.post("/api/ai/rescue", async (req, res) => {
     const { data, meta } = await generateJSON({
       system: `${PET_VOICE}\n\n${petStateBlock(petCtx)}`,
       cacheKey: "rescue",
-      maxTokens: 700,
+      maxTokens: 450,
       prompt: `The learner feels stuck or behind on ${subject || "their studies"}.${feeling ? ` They said: "${feeling}".` : ""}
 
 Give them a restart that takes under two minutes and is impossible to fail. The point is momentum, not assessment. Make the question easy enough that they will get it right.
@@ -327,7 +345,7 @@ app.post("/api/ai/trajectory", async (req, res) => {
     const { data, meta } = await generateJSON({
       system: TRAJECTORY_SYSTEM,
       cacheKey: "trajectory",
-      maxTokens: 1200,
+      maxTokens: 900,
       prompt: `Project four weeks ahead for a learner studying ${subject || "their course"}.
 Average minutes per day: ${minutesPerDay || 20}. Current streak: ${streak || 0} days. Days since last session: ${daysSinceStudy || 0}.
 

@@ -7,9 +7,9 @@
  */
 
 import type {
+  CheckQuestion,
   Course,
   GradeResult,
-  LessonPayload,
   Nudge,
   PetState,
   ProviderInfo,
@@ -78,26 +78,42 @@ export async function buildCurriculum(input: {
   };
 }
 
-export async function fetchLesson(input: {
+export interface LessonInput {
   moduleTitle: string;
   sourceExcerpt?: string;
   notes: string;
   subject: string;
   previousLessons?: string[];
-}): Promise<LessonPayload> {
+}
+
+/** The teaching prose. Requested first so reading can start immediately. */
+export async function fetchLesson(input: LessonInput): Promise<string> {
   const data = await post<any>("/api/ai/lesson", input);
-  return {
-    lesson: data.lesson || "",
-    questions: (data.questions || []).map((q: any, i: number) => ({
-      id: q.id || `q${i + 1}`,
-      kind: q.kind === "text" ? "text" : "mcq",
-      question: q.question || "",
-      options: q.options,
-      correctIndex: q.correctIndex,
-      explanation: q.explanation,
-      modelAnswer: q.modelAnswer,
-    })),
-  };
+  return data.lesson || "";
+}
+
+/** The check questions, fetched while the learner reads the lesson. */
+export async function fetchChecks(input: LessonInput): Promise<CheckQuestion[]> {
+  const data = await post<any>("/api/ai/checks", input);
+  return (data.questions || []).map((q: any, i: number) => ({
+    id: q.id || `q${i + 1}`,
+    kind: q.kind === "text" ? "text" : "mcq",
+    question: q.question || "",
+    options: q.options,
+    correctIndex: q.correctIndex,
+    explanation: q.explanation,
+    modelAnswer: q.modelAnswer,
+  }));
+}
+
+/**
+ * Warm the cache for the lesson the learner is most likely to open next, so
+ * pressing Start feels immediate. Only the prose is warmed: a local model
+ * serves one request at a time, so queueing the questions too would just delay
+ * the thing the learner is actually waiting for.
+ */
+export function prefetchLesson(input: LessonInput): void {
+  void fetchLesson(input).catch(() => {});
 }
 
 export async function gradeAnswer(input: {
