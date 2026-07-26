@@ -28,6 +28,9 @@
 > "This is the one place we turn Gemma's thinking mode ON — curriculum planning is genuine reasoning. Everywhere else it's off; that decision alone took a lesson from 171 seconds to 15."
 - *(Filler while waiting, if needed):* open the header — point at **GEMMA4:E4B · ON-DEVICE**.
 
+  ### The pamodoro technique
+The Pomodoro Technique is a popular time-management method that breaks work into focused 25-minute intervals separated by short breaks, created by Francesco Cirillo in the late 1980s.  
+
 ### 0:55 — The lesson (~45s)
 - Today screen: point at the egg wobbling, the warm nudge line ("this text is generated fresh from the pet's live state").
 - **Start this sub-lesson.** Scroll the lesson:
