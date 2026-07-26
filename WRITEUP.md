@@ -62,5 +62,3 @@ The judges' brief asks for a companion that *nudges at the right moment, adapts,
 ## Honest status & roadmap
 
 Everything described above works today. Planned next (designed, in the repo's plan): week-by-week topic structure inside modules with mass lecture upload, a standalone quiz-drills mode with whole-module "big review", a Spirit Farm where focus minutes water crops, interactive trajectory sliders, and adopting additional pets. The plan file documents exactly what is built versus designed.
-
-*Word count: ~1,180.*
