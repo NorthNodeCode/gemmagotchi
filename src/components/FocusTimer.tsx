@@ -62,9 +62,20 @@ export const FocusTimer: React.FC<Props> = ({
   const total = working ? timer.minutes * 60 : BREAK_MINUTES * 60;
   const progress = total > 0 ? 1 - timer.secondsLeft / total : 0;
 
+  const started = timer.secondsLeft !== total || timer.running || timer.rounds > 0;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#2D362E]/60 p-4 backdrop-blur-xs">
+    /**
+     * Clicking away minimises rather than closes. A running clock is work in
+     * progress, and a stray click on the backdrop must never be able to throw
+     * it away — dismissing a session is only ever explicit.
+     */
+    <div
+      onClick={onMinimise}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#2D362E]/60 p-4 backdrop-blur-xs"
+    >
       <motion.div
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         className="w-full max-w-md overflow-hidden rounded-3xl border border-[#E5E2D9] bg-white shadow-2xl"
@@ -82,18 +93,11 @@ export const FocusTimer: React.FC<Props> = ({
           <div className="flex items-center gap-1">
             <button
               onClick={onMinimise}
-              title="Keep it running in the background"
+              title={started ? "Keep it running in the background" : "Hide"}
               aria-label="Minimise timer"
               className="rounded-full p-2 text-[#7A837C] transition-colors hover:bg-[#F5F2EA] hover:text-[#2D362E]"
             >
-              <Minus className="h-4 w-4" />
-            </button>
-            <button
-              onClick={onClose}
-              aria-label="Close timer"
-              className="rounded-full p-2 text-[#7A837C] transition-colors hover:bg-[#F5F2EA] hover:text-[#2D362E]"
-            >
-              <X className="h-4 w-4" />
+              {started ? <Minus className="h-4 w-4" /> : <X className="h-4 w-4" />}
             </button>
           </div>
         </div>
@@ -176,12 +180,22 @@ export const FocusTimer: React.FC<Props> = ({
           </div>
 
           {working ? (
-            <button
-              onClick={onRescue}
-              className="mx-auto mt-3 flex items-center gap-1.5 text-xs font-bold text-[#B4703F] underline underline-offset-2"
-            >
-              <LifeBuoy className="h-3.5 w-3.5" /> Stuck? Two-minute rescue
-            </button>
+            <div className="mt-3 flex items-center justify-center gap-4">
+              <button
+                onClick={onRescue}
+                className="flex items-center gap-1.5 text-xs font-bold text-[#B4703F] underline underline-offset-2"
+              >
+                <LifeBuoy className="h-3.5 w-3.5" /> Stuck? Two-minute rescue
+              </button>
+              {started && (
+                <button
+                  onClick={onClose}
+                  className="text-xs font-bold text-[#7A837C] underline underline-offset-2 hover:text-[#2D362E]"
+                >
+                  End session
+                </button>
+              )}
+            </div>
           ) : (
             <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-[#7A837C]">
               <Coffee className="h-3.5 w-3.5" /> Actually rest — that is what makes the next
