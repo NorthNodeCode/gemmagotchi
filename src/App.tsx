@@ -28,6 +28,10 @@ import {
   prefetchLesson,
 } from "./services/api";
 import { applyDecay, createPet, feedPet, recordStudy, stageFor, type PetState } from "./lib/petState";
+import type { PetSpecies } from "./lib/sprites";
+
+/** What another egg costs. Steep enough to be a milestone, not a whim. */
+const ADOPTION_COST = 40;
 import { DEFAULT_PROFILE, paceFromSeconds, remeasure, weakTopics } from "./lib/learnerModel";
 import { CoachCard, ProfileModal } from "./components/Coach";
 import { DiagnosticModal, type DiagnosticOutcome } from "./components/DiagnosticModal";
@@ -68,6 +72,8 @@ const KEYS = {
   minutes: "gemmagotchi_minutes",
   studyLog: "gemmagotchi_studylog",
   answers: "gemmagotchi_answers",
+  timer: "gemmagotchi_timer",
+  bench: "gemmagotchi_pets_bench",
   profile: "gemmagotchi_profile",
 };
 
@@ -103,7 +109,13 @@ export default function App() {
 
 function Gemmagotchi() {
   const [learner, setLearner] = useState<Learner | null>(() => load<Learner | null>(KEYS.learner, null));
-  const [pet, setPet] = useState<PetState | null>(() => load<PetState | null>(KEYS.pet, null));
+  const [pet, setPet] = useState<PetState | null>(() => {
+    const p = load<PetState | null>(KEYS.pet, null);
+    // Pets predating adoption have no id; give them a stable one.
+    return p && !p.id ? { ...p, id: "pet-legacy" } : p;
+  });
+  /** Adopted pets not currently active. They rest; only the companion decays. */
+  const [bench, setBench] = useState<PetState[]>(() => load<PetState[]>(KEYS.bench, []));
   const [courses, setCourses] = useState<Course[]>(loadCourses);
   const [activeCourseId, setActiveCourseId] = useState<string | null>(() => {
     const stored = load<string | null>(KEYS.activeCourse, null);
@@ -121,7 +133,7 @@ function Gemmagotchi() {
 
   const [tab, setTab] = useState<Tab>("today");
   const [activeModule, setActiveModule] = useState<SubLesson | null>(null);
-  const [timer, setTimer] = useState<TimerState | null>(null);
+  const [timer, setTimer] = useState<TimerState | null>(() => load<TimerState | null>(KEYS.timer, null));
   const [timerOpen, setTimerOpen] = useState(false);
   const [building, setBuilding] = useState(false);
   const [planProgress, setPlanProgress] = useState<{ current: number; total: number; title: string } | null>(null);
@@ -161,6 +173,13 @@ function Gemmagotchi() {
   useEffect(() => { localStorage.setItem(KEYS.minutes, JSON.stringify(minutesPerDay)); }, [minutesPerDay]);
   useEffect(() => { localStorage.setItem(KEYS.studyLog, JSON.stringify(studyLog)); }, [studyLog]);
   useEffect(() => { localStorage.setItem(KEYS.answers, JSON.stringify(answers)); }, [answers]);
+  useEffect(() => { localStorage.setItem(KEYS.bench, JSON.stringify(bench)); }, [bench]);
+  useEffect(() => {
+    // The running pomodoro is real work in progress — it survives everything,
+    // including a page reload. Only "End session" removes it.
+    if (timer) localStorage.setItem(KEYS.timer, JSON.stringify(timer));
+    else localStorage.removeItem(KEYS.timer);
+  }, [timer]);
   useEffect(() => { localStorage.setItem(KEYS.profile, JSON.stringify(profile)); }, [profile]);
 
   useEffect(() => {
@@ -577,6 +596,29 @@ function Gemmagotchi() {
     setCelebrate((c) => c + 1);
   }
 
+  /**
+   * Adoption: another egg joins the family. The newcomer starts on the bench —
+   * the active companion is a relationship, not a slot machine, so switching
+   * is always the learner's explicit choice.
+   */
+  function adoptPet(species: PetSpecies, name: string) {
+    if (gems < ADOPTION_COST) return;
+    setGems((g) => g - ADOPTION_COST);
+    setBench((b) => [...b, createPet(name.trim() || "Newbie", species, now())]);
+    confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+  }
+
+  /** Swap the active companion with one from the bench. */
+  function switchPet(id: string) {
+    const next = bench.find((b) => b.id === id);
+    if (!next || !pet) return;
+    setBench((b) => [...b.filter((x) => x.id !== id), pet]);
+    // The incoming pet was resting, not neglected — it wakes at the time it
+    // was benched, so it is not punished for the time you spent elsewhere.
+    setPet({ ...next, lastStudiedAt: now() });
+    setCelebrate((c) => c + 1);
+  }
+
   function buyFood(foodId: string) {
     const food = FOODS.find((f) => f.id === foodId);
     if (!food || gems < food.cost) return;
@@ -652,6 +694,8 @@ function Gemmagotchi() {
                 nextModule={nextModule}
                 celebrateKey={celebrate}
                 studyLog={studyLog}
+                bench={bench}
+                onSwitchPet={switchPet}
                 coach={
                   <CoachCard
                     answers={answers}
@@ -718,7 +762,16 @@ function Gemmagotchi() {
               />
             )}
             {tab === "store" && (
-              <StoreView gems={gems} pet={pet} inventory={inventory} onBuy={buyFood} onFeed={useFood} />
+              <StoreView
+                gems={gems}
+                pet={pet}
+                bench={bench}
+                inventory={inventory}
+                adoptionCost={ADOPTION_COST}
+                onBuy={buyFood}
+                onFeed={useFood}
+                onAdopt={adoptPet}
+              />
             )}
             {tab === "trajectory" && (
               <TrajectoryView pet={pet} subject={course.subject} minutesPerDay={minutesPerDay} />

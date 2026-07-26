@@ -44,7 +44,41 @@ interface Props {
   celebrateKey?: number;
   showBars?: boolean;
   speech?: string | null;
+  /** Drag to move, scroll to spin, double-click to reset — all persisted. */
+  interactive?: boolean;
   onClick?: () => void;
+}
+
+/**
+ * Where each pet sits and how it is turned, persisted per pet. A pet you
+ * placed somewhere should still be there tomorrow — that is half of what
+ * makes it feel like it lives on the screen rather than being printed on it.
+ */
+interface Pose {
+  x: number;
+  y: number;
+  angle: number;
+}
+
+const POSE_KEY = "gemmagotchi_petpose";
+
+function loadPose(petId: string): Pose {
+  try {
+    const all = JSON.parse(localStorage.getItem(POSE_KEY) || "{}");
+    return { x: 0, y: 0, angle: 0, ...(all[petId] ?? {}) };
+  } catch {
+    return { x: 0, y: 0, angle: 0 };
+  }
+}
+
+function savePose(petId: string, pose: Pose) {
+  try {
+    const all = JSON.parse(localStorage.getItem(POSE_KEY) || "{}");
+    all[petId] = pose;
+    localStorage.setItem(POSE_KEY, JSON.stringify(all));
+  } catch {
+    // Placement is a nicety; never let it throw.
+  }
 }
 
 export const PetCompanion: React.FC<Props> = ({
@@ -53,12 +87,21 @@ export const PetCompanion: React.FC<Props> = ({
   celebrateKey = 0,
   showBars = true,
   speech,
+  interactive = false,
   onClick,
 }) => {
   const mood = moodFor(pet.health);
   const look = MOOD_LOOK[mood];
   const asleep = mood === "sleepy" && pet.stage !== "egg";
   const [pop, setPop] = useState(false);
+
+  const petId = pet.id ?? pet.name;
+  const [pose, setPose] = useState<Pose>(() => loadPose(petId));
+
+  function updatePose(next: Pose) {
+    setPose(next);
+    savePose(petId, next);
+  }
 
   useEffect(() => {
     if (celebrateKey === 0) return;
@@ -92,34 +135,62 @@ export const PetCompanion: React.FC<Props> = ({
           )}
         </AnimatePresence>
 
-        <motion.button
-          type="button"
-          onClick={onClick}
-          animate={
-            pop
-              ? { scale: [1, 1.25, 1], y: [0, -14, 0], opacity: 1, filter: "saturate(1.2)" }
-              : { y: look.bob, opacity: look.opacity, filter: `saturate(${look.saturation})` }
+        {/* The pose layer owns where the pet is and how it is turned; the
+            button inside keeps the mood animation. Separate layers because
+            drag and the idle bob both want to write `y`. */}
+        <motion.div
+          drag={interactive}
+          dragMomentum={false}
+          dragElastic={0.15}
+          dragConstraints={
+            interactive
+              ? { left: -size, right: size, top: -size * 0.5, bottom: size * 0.75 }
+              : undefined
           }
-          transition={
-            pop
-              ? { duration: 0.7, ease: "easeOut" }
-              : { repeat: Infinity, duration: look.duration, ease: "easeInOut" }
+          animate={{ x: pose.x, y: pose.y, rotate: pose.angle }}
+          transition={{ type: "spring", stiffness: 500, damping: 40 }}
+          onDragEnd={(_e, info) =>
+            updatePose({ ...pose, x: pose.x + info.offset.x, y: pose.y + info.offset.y })
           }
-          className="relative cursor-pointer bg-transparent"
-          aria-label={`${pet.name} the ${pet.species}, ${MOOD_COPY[mood].toLowerCase()}`}
+          onWheel={
+            interactive
+              ? (e) => updatePose({ ...pose, angle: pose.angle + (e.deltaY > 0 ? 15 : -15) })
+              : undefined
+          }
+          onDoubleClick={interactive ? () => updatePose({ x: 0, y: 0, angle: 0 }) : undefined}
+          title={interactive ? "Drag to move · scroll to spin · double-click to reset" : undefined}
+          className={interactive ? "cursor-grab active:cursor-grabbing" : undefined}
+          style={{ touchAction: interactive ? "none" : undefined }}
         >
-          {pet.stage === "egg" ? (
-            <EggSprite species={pet.species} size={size} />
-          ) : (
-            <AnimalSprite
-              species={pet.species}
-              stage={pet.stage === "adult" ? "adult" : "baby"}
-              row={asleep ? sleepRowFor(pet.species) : FACING_VIEWER}
-              size={size}
-              fps={look.fps}
-            />
-          )}
-        </motion.button>
+          <motion.button
+            type="button"
+            onClick={onClick}
+            animate={
+              pop
+                ? { scale: [1, 1.25, 1], y: [0, -14, 0], opacity: 1, filter: "saturate(1.2)" }
+                : { y: look.bob, opacity: look.opacity, filter: `saturate(${look.saturation})` }
+            }
+            transition={
+              pop
+                ? { duration: 0.7, ease: "easeOut" }
+                : { repeat: Infinity, duration: look.duration, ease: "easeInOut" }
+            }
+            className="relative cursor-inherit bg-transparent"
+            aria-label={`${pet.name} the ${pet.species}, ${MOOD_COPY[mood].toLowerCase()}`}
+          >
+            {pet.stage === "egg" ? (
+              <EggSprite species={pet.species} size={size} />
+            ) : (
+              <AnimalSprite
+                species={pet.species}
+                stage={pet.stage === "adult" ? "adult" : "baby"}
+                row={asleep ? sleepRowFor(pet.species) : FACING_VIEWER}
+                size={size}
+                fps={look.fps}
+              />
+            )}
+          </motion.button>
+        </motion.div>
 
         {asleep && !pop && <SleepZs size={size} />}
 

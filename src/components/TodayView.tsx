@@ -1,8 +1,8 @@
 import React from "react";
 import { motion } from "motion/react";
 import { PetCompanion } from "./PetCompanion";
-import { ItemSprite } from "./PixelSprite";
-import { ITEM } from "../lib/sprites";
+import { AnimalSprite, ItemSprite } from "./PixelSprite";
+import { EGG_FOR_SPECIES, ITEM } from "../lib/sprites";
 import { daysBetween, GRACE_DAYS } from "../lib/petState";
 import { now } from "../lib/clock";
 import { Play, LifeBuoy, Loader2, Sparkles, Timer, Clock, Flame, Heart, TrendingUp } from "lucide-react";
@@ -18,6 +18,9 @@ interface Props {
   nextModule: SubLesson | null;
   celebrateKey: number;
   studyLog: StudyLogEntry[];
+  /** Adopted pets waiting their turn. */
+  bench: PetState[];
+  onSwitchPet: (id: string) => void;
   /** The coach card, built by App (it owns the logs the coach reads). */
   coach?: React.ReactNode;
   onStartLesson: () => void;
@@ -43,6 +46,8 @@ export const TodayView: React.FC<Props> = ({
   nextModule,
   celebrateKey,
   studyLog,
+  bench,
+  onSwitchPet,
   coach,
   onStartLesson,
   onStartSprint,
@@ -105,8 +110,31 @@ export const TodayView: React.FC<Props> = ({
 
       <div className="grid gap-5 lg:grid-cols-12">
       <section className="lg:col-span-5">
-        <div className="rounded-3xl border border-[#E5E2D9] bg-white p-6 shadow-sm">
-          <PetCompanion pet={pet} size={172} celebrateKey={celebrateKey} />
+        <div className="overflow-hidden rounded-3xl border border-[#E5E2D9] bg-white p-6 shadow-sm">
+          <PetCompanion pet={pet} size={172} celebrateKey={celebrateKey} interactive />
+
+          {bench.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A837C]">
+                Your animals
+              </span>
+              {bench.map((b) => (
+                <button
+                  key={b.id}
+                  onClick={() => b.id && onSwitchPet(b.id)}
+                  title={`Make ${b.name} your companion`}
+                  className="flex items-center gap-1.5 rounded-full border border-[#E5E2D9] bg-[#FDFCF8] px-2.5 py-1 text-[11px] font-bold text-[#5E7161] transition-colors hover:border-[#8BA88E] hover:bg-[#F0F4F0]"
+                >
+                  {b.stage === "egg" ? (
+                    <ItemSprite item={EGG_FOR_SPECIES[b.species]} size={16} />
+                  ) : (
+                    <AnimalSprite species={b.species} stage={b.stage === "adult" ? "adult" : "baby"} size={18} animate={false} />
+                  )}
+                  {b.name}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* The pet's line. This is where the no-shame rule is most visible:
               a long absence produces warmth, not a guilt trip. */}
@@ -194,7 +222,7 @@ export const TodayView: React.FC<Props> = ({
               className="flex items-center justify-center gap-2 rounded-2xl border border-[#E5E2D9] bg-[#FDFCF8] px-5 py-3.5 text-sm font-bold text-[#5E7161] transition-all hover:bg-[#F0F4F0]"
             >
               <Timer className="h-4 w-4" />
-              Focus sprint
+              Pomodoro timer
             </button>
             <button
               onClick={onRescue}
@@ -205,7 +233,7 @@ export const TodayView: React.FC<Props> = ({
             </button>
           </div>
           <p className="mt-2.5 text-center text-[11px] text-[#7A837C]">
-            Tutor mode teaches and checks. Sprint mode just keeps you company while you work.
+            Tutor mode teaches and checks. The pomodoro timer just keeps you company while you work.
           </p>
         </div>
 

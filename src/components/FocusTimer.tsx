@@ -83,7 +83,7 @@ export const FocusTimer: React.FC<Props> = ({
         <div className="flex items-center justify-between border-b border-[#E5E2D9] px-5 py-3.5">
           <div>
             <h3 className="font-serif text-base font-bold">
-              {working ? "Focus round" : "Break"}
+              {working ? "Pomodoro timer" : "Break"}
             </h3>
             <p className="text-[11px] text-[#7A837C]">
               {subject ?? "Any work you like"}

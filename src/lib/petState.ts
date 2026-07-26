@@ -20,6 +20,8 @@ export type PetStage = "egg" | "baby" | "adult";
 export type PetMood = "thriving" | "content" | "sleepy" | "hungry";
 
 export interface PetState {
+  /** Stable identity, for per-pet placement and the adoption roster. */
+  id?: string;
   name: string;
   species: PetSpecies;
   stage: PetStage;
@@ -40,6 +42,7 @@ export const GROWTH_TO_ADULT = 12;
 
 export function createPet(name: string, species: PetSpecies, now: number): PetState {
   return {
+    id: `pet-${now}-${Math.floor(Math.random() * 1e6)}`,
     name,
     species,
     stage: "egg",

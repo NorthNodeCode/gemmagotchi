@@ -65,8 +65,9 @@ Structure of your lesson body (markdown):
 - Teach the concept in full detail, following every style rule above.
 - Include at least one worked example with real, concrete values, laid out step by step.
 - Close with a bold line: **In one sentence:** ...
+- The lesson body must contain NO questions of any kind — no "self-check", no "test yourself", no "try this", no practice exercises, no rhetorical quizzes. Checking understanding happens OUTSIDE the lesson, in a separate step you are not writing. A lesson that ends by quizzing the reader is malformed.
 
-Then write check questions that require APPLYING the idea, not recalling a word.`;
+When separately asked for check questions, write ones that require APPLYING the idea, not recalling a word.`;
 
 export const GRADER_SYSTEM = `${TUTOR_VOICE}
 
