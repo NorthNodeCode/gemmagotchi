@@ -1,7 +1,7 @@
 import React from "react";
 import { AvatarSprite, ItemSprite } from "./PixelSprite";
 import { ITEM } from "../lib/sprites";
-import { Flame, FastForward, RotateCcw, Cpu, Cloud, Bot, Trophy } from "lucide-react";
+import { Flame, FastForward, RotateCcw, Cpu, Cloud, Bot } from "lucide-react";
 import type { Learner, PetState, ProviderInfo } from "../types";
 
 export type Tab = "today" | "courses" | "plan" | "store" | "trajectory";
@@ -26,7 +26,6 @@ interface Props {
   onResetClock: () => void;
   onOpenSocratic: () => void;
   onOpenGems: () => void;
-  onOpenPitch: () => void;
 }
 
 export const Header: React.FC<Props> = ({
@@ -41,7 +40,6 @@ export const Header: React.FC<Props> = ({
   onResetClock,
   onOpenSocratic,
   onOpenGems,
-  onOpenPitch,
 }) => (
   <header className="sticky top-0 z-40 border-b border-[#E5E2D9] bg-[#FDFCF8]/95 backdrop-blur">
     <div className="mx-auto max-w-7xl px-4 sm:px-6">
@@ -75,14 +73,6 @@ export const Header: React.FC<Props> = ({
           >
             <Bot className="h-3.5 w-3.5" /> Ask Gemma
           </button>
-          <button
-            onClick={onOpenPitch}
-            title="Kaggle competition pitch"
-            className="flex items-center gap-1.5 rounded-full border border-[#F0D194] bg-[#FFF8F0] px-3 py-1.5 text-xs font-bold text-[#D97706] transition-colors hover:bg-[#FDF0DC]"
-          >
-            <Trophy className="h-3.5 w-3.5" /> Kaggle pitch
-          </button>
-
           <div className="flex items-center gap-1.5 rounded-full border border-[#E5E2D9] bg-white px-3 py-1.5">
             <Flame className={`h-3.5 w-3.5 ${pet.streak > 0 ? "text-[#D97706]" : "text-[#C9CCC7]"}`} />
             <span className="text-xs font-bold">{pet.streak}</span>

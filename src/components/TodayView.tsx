@@ -5,7 +5,7 @@ import { ItemSprite } from "./PixelSprite";
 import { ITEM } from "../lib/sprites";
 import { daysBetween, GRACE_DAYS } from "../lib/petState";
 import { now } from "../lib/clock";
-import { Play, LifeBuoy, Loader2, Sparkles } from "lucide-react";
+import { Play, LifeBuoy, Loader2, Sparkles, Timer } from "lucide-react";
 import type { Course, Nudge, PetState, SubLesson } from "../types";
 
 interface Props {
@@ -16,6 +16,7 @@ interface Props {
   nextModule: SubLesson | null;
   celebrateKey: number;
   onStartLesson: () => void;
+  onStartSprint: () => void;
   onRescue: () => void;
   onOpenPlan: () => void;
 }
@@ -28,6 +29,7 @@ export const TodayView: React.FC<Props> = ({
   nextModule,
   celebrateKey,
   onStartLesson,
+  onStartSprint,
   onRescue,
   onOpenPlan,
 }) => {
@@ -124,6 +126,13 @@ export const TodayView: React.FC<Props> = ({
               {nextModule ? "Start this sub-lesson" : "Review the plan"}
             </button>
             <button
+              onClick={onStartSprint}
+              className="flex items-center justify-center gap-2 rounded-2xl border border-[#E5E2D9] bg-[#FDFCF8] px-5 py-3.5 text-sm font-bold text-[#5E7161] transition-all hover:bg-[#F0F4F0]"
+            >
+              <Timer className="h-4 w-4" />
+              Focus sprint
+            </button>
+            <button
               onClick={onRescue}
               className="flex items-center justify-center gap-2 rounded-2xl border border-[#E8C5B0] bg-[#FFFBF5] px-5 py-3.5 text-sm font-bold text-[#B4703F] transition-all hover:bg-[#FFF5E9]"
             >
@@ -131,6 +140,9 @@ export const TodayView: React.FC<Props> = ({
               Can't start?
             </button>
           </div>
+          <p className="mt-2.5 text-center text-[11px] text-[#7A837C]">
+            Tutor mode teaches and checks. Sprint mode just keeps you company while you work.
+          </p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">

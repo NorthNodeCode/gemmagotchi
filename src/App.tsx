@@ -11,6 +11,7 @@ import { RescueModal } from "./components/RescueModal";
 import { DevSprites } from "./components/DevSprites";
 import { CoursesView } from "./components/CoursesView";
 import { SocraticModal } from "./components/SocraticModal";
+import { SprintRoom } from "./components/SprintRoom";
 import {
   buildCurriculum,
   fetchNudge,
@@ -91,6 +92,7 @@ function Gemmagotchi() {
 
   const [tab, setTab] = useState<Tab>("today");
   const [activeModule, setActiveModule] = useState<SubLesson | null>(null);
+  const [sprinting, setSprinting] = useState(false);
   const [building, setBuilding] = useState(false);
   const [provider, setProvider] = useState<ProviderInfo | null>(null);
   const [clockDays, setClockDays] = useState(() => offsetDays());
@@ -101,7 +103,6 @@ function Gemmagotchi() {
 
   const [socraticOpen, setSocraticOpen] = useState(false);
   const [gemsOpen, setGemsOpen] = useState(false);
-  const [pitchOpen, setPitchOpen] = useState(false);
 
   const [rescueOpen, setRescueOpen] = useState(false);
   const [rescue, setRescue] = useState<RescuePayload | null>(null);
@@ -286,6 +287,22 @@ function Gemmagotchi() {
   }
 
   /**
+   * A finished sprint counts as study: it pays gems and energy by the minute
+   * and updates the streak the same way a sub-lesson does. Time spent with the
+   * material is study — only the shape is different.
+   */
+  function completeSprint(minutes: number) {
+    setPet((p) => {
+      if (!p) return p;
+      const result = recordStudy(p, now(), 2, minutes * 2);
+      setGems((g) => g + result.gems);
+      return { ...result.pet, health: Math.min(100, result.pet.health + minutes) };
+    });
+    setCelebrate((c) => c + 1);
+    confetti({ particleCount: 140, spread: 90, origin: { y: 0.6 } });
+  }
+
+  /**
    * Gems buy help for the pet, never a shortcut past the studying. The surge
    * runs growth through the same stage recompute a correct answer does, so
    * hatching still fires the celebration.
@@ -348,6 +365,7 @@ function Gemmagotchi() {
         clockDays={clockDays}
         onTab={(t) => {
           setActiveModule(null);
+          setSprinting(false);
           setTab(t);
         }}
         onAdvanceDay={() => {
@@ -360,11 +378,18 @@ function Gemmagotchi() {
         }}
         onOpenSocratic={() => setSocraticOpen(true)}
         onOpenGems={() => setGemsOpen(true)}
-        onOpenPitch={() => setPitchOpen(true)}
       />
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        {activeModule ? (
+        {sprinting ? (
+          <SprintRoom
+            pet={pet}
+            course={course}
+            onComplete={completeSprint}
+            onRescue={openRescue}
+            onExit={() => setSprinting(false)}
+          />
+        ) : activeModule ? (
           <TutorRoom
             course={course}
             module={activeModule}
@@ -385,6 +410,7 @@ function Gemmagotchi() {
                 nextModule={nextModule}
                 celebrateKey={celebrate}
                 onStartLesson={() => nextModule && setActiveModule(nextModule)}
+                onStartSprint={() => setSprinting(true)}
                 onRescue={openRescue}
                 onOpenPlan={() => setTab("plan")}
               />
