@@ -15,6 +15,7 @@ import {
   CURRICULUM_SYSTEM,
   LESSON_SYSTEM,
   GRADER_SYSTEM,
+  DRILL_SYSTEM,
   SOCRATIC_MODES,
   petStateBlock,
   type SocraticMode,
@@ -321,6 +322,73 @@ function socraticFallback(
   }
   return `Gemma is offline right now. Try this instead: write down what you think you know about ${topic || "this topic"}, then find the one sentence in your notes that would prove you wrong.`;
 }
+
+// ---------------------------------------------------------------------------
+// 3c. Drills — retrieval practice on demand, for the learner who does not want
+//     a lesson today, just to be tested. Also powers the whole-course review.
+// ---------------------------------------------------------------------------
+app.post("/api/ai/drill", async (req, res) => {
+  const { subject, notes, topics, count, scope } = req.body || {};
+  const howMany = Math.min(10, Math.max(3, Number(count) || 5));
+  const wholeCourse = scope === "course";
+
+  const topicList = Array.isArray(topics) && topics.length
+    ? topics.map((t: string, i: number) => `${i + 1}. ${t}`).join("\n")
+    : "";
+
+  try {
+    const { data, meta } = await generateJSON({
+      system: `${DRILL_SYSTEM}`,
+      cacheKey: `drill:${scope}:${howMany}`,
+      maxTokens: 1400,
+      prompt: `Write ${howMany} retrieval-practice questions for a student revising ${subject || "this subject"}.
+
+${topicList ? `THE TOPICS THEY HAVE COVERED:\n${topicList}\n` : ""}
+THEIR MATERIAL:
+"""${String(notes || "").slice(0, 8000)}"""
+
+${
+  wholeCourse
+    ? "This is a WHOLE-COURSE review. Span EVERY topic listed above — do not cluster on one. Prefer questions that force the student to connect two different topics."
+    : "Stay on this topic, but move from recall to application across the set."
+}
+
+Mix formats: about two thirds multiple choice, one third short free-text answers.
+Questions must require APPLYING an idea, not recognising a word.
+
+Return JSON:
+{
+  "questions": [
+    { "id": "q1", "kind": "mcq", "question": "...", "options": ["...","...","...","..."], "correctIndex": 0, "explanation": "why that is right, with a concrete example" },
+    { "id": "q2", "kind": "text", "question": "...", "modelAnswer": "what a full-credit answer contains" }
+  ]
+}`,
+    });
+
+    const questions = Array.isArray(data?.questions) ? data.questions : [];
+    if (!questions.length) throw new Error("no questions produced");
+    res.json({ questions, _gemma: meta });
+  } catch (error: any) {
+    console.error("[drill]", error?.message || error);
+    res.json({
+      questions: [
+        {
+          id: "f1",
+          kind: "text",
+          question: `Without looking at your notes, explain the single most important idea in ${subject || "this topic"} to someone who has never met it.`,
+          modelAnswer: "Any clear, correct explanation in the learner's own words.",
+        },
+        {
+          id: "f2",
+          kind: "text",
+          question: "Which part of that explanation did you have to reach for? That is what to study next.",
+          modelAnswer: "Naming the shaky step honestly.",
+        },
+      ],
+      _offline: true,
+    });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // 4. Nudge — the pet's voice, driven by its current state.

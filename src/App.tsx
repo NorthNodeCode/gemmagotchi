@@ -12,6 +12,7 @@ import { DevSprites } from "./components/DevSprites";
 import { CoursesView } from "./components/CoursesView";
 import { SocraticModal } from "./components/SocraticModal";
 import { SprintRoom } from "./components/SprintRoom";
+import { DrillsView } from "./components/DrillsView";
 import {
   buildCurriculum,
   fetchNudge,
@@ -470,6 +471,22 @@ function Gemmagotchi() {
               />
             )}
             {tab === "plan" && <PlanView course={course} onStart={setActiveModule} />}
+            {tab === "drills" && (
+              <DrillsView
+                course={course}
+                hasMasterclass={inventory.owned.includes("masterclass")}
+                onCorrect={handleCorrect}
+                onDrillComplete={(label, score, total) =>
+                  logStudy({
+                    label: `Drill: ${label}`,
+                    gems: score * 5,
+                    wasComeback: false,
+                    durationMins: total,
+                    kind: "drill",
+                  })
+                }
+              />
+            )}
             {tab === "store" && (
               <StoreView gems={gems} pet={pet} inventory={inventory} onBuy={buyFood} onFeed={useFood} />
             )}

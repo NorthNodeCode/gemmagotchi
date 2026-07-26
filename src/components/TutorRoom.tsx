@@ -249,7 +249,7 @@ export const TutorRoom: React.FC<Props> = ({
 
 // ---------------------------------------------------------------------------
 
-const QuestionCard: React.FC<{
+export const QuestionCard: React.FC<{
   question: CheckQuestion;
   index: number;
   total: number;
