@@ -450,6 +450,8 @@ function Gemmagotchi() {
                 nudgeLoading={nudgeLoading}
                 nextModule={nextModule}
                 celebrateKey={celebrate}
+                studyLog={studyLog}
+                onOpenTrajectory={() => setTab("trajectory")}
                 onStartLesson={() => nextModule && setActiveModule(nextModule)}
                 onStartSprint={() => setSprinting(true)}
                 onRescue={openRescue}

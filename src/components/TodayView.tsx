@@ -5,8 +5,9 @@ import { ItemSprite } from "./PixelSprite";
 import { ITEM } from "../lib/sprites";
 import { daysBetween, GRACE_DAYS } from "../lib/petState";
 import { now } from "../lib/clock";
-import { Play, LifeBuoy, Loader2, Sparkles, Timer } from "lucide-react";
-import type { Course, Nudge, PetState, SubLesson } from "../types";
+import { Play, LifeBuoy, Loader2, Sparkles, Timer, Clock, Flame, Heart, TrendingUp } from "lucide-react";
+import { moodFor } from "../lib/petState";
+import type { Course, Nudge, PetState, StudyLogEntry, SubLesson } from "../types";
 
 interface Props {
   pet: PetState;
@@ -15,10 +16,20 @@ interface Props {
   nudgeLoading: boolean;
   nextModule: SubLesson | null;
   celebrateKey: number;
+  studyLog: StudyLogEntry[];
   onStartLesson: () => void;
   onStartSprint: () => void;
   onRescue: () => void;
   onOpenPlan: () => void;
+  onOpenTrajectory: () => void;
+}
+
+/** "95m" reads worse than "1h 35m" once someone has actually put the hours in. */
+function formatMinutes(total: number): string {
+  if (total < 60) return `${total}m`;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
 }
 
 export const TodayView: React.FC<Props> = ({
@@ -28,18 +39,66 @@ export const TodayView: React.FC<Props> = ({
   nudgeLoading,
   nextModule,
   celebrateKey,
+  studyLog,
   onStartLesson,
   onStartSprint,
   onRescue,
   onOpenPlan,
+  onOpenTrajectory,
 }) => {
   const away = daysBetween(pet.lastStudiedAt, now());
   const isComeback = away > GRACE_DAYS;
   const done = course?.modules.filter((m) => m.completed).length ?? 0;
   const total = course?.modules.length ?? 0;
 
+  const totalMins = studyLog.reduce((sum, e) => sum + (e.durationMins ?? 0), 0);
+  const sessions = studyLog.length;
+  const mood = moodFor(pet.health);
+  const flagging = mood === "sleepy" || mood === "hungry";
+
   return (
-    <div className="grid gap-5 lg:grid-cols-12">
+    <div className="space-y-5">
+      {/* What the learner has actually done, so the effort is visible even on
+          a day they have not started yet. */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Metric
+          icon={Clock}
+          label="Total focus time"
+          value={formatMinutes(totalMins)}
+          sub={sessions === 1 ? "1 session" : `${sessions} sessions`}
+          tint="text-[#5E7161]"
+        />
+        <Metric
+          icon={Flame}
+          label="Day streak"
+          value={String(pet.streak)}
+          sub={pet.streak === 0 ? "starts with one lesson" : "keep it going"}
+          tint="text-[#D97706]"
+        />
+        <Metric
+          icon={Heart}
+          label={`${pet.name}'s vitality`}
+          value={`${Math.round(pet.health)}%`}
+          sub={
+            pet.stage === "egg"
+              ? "still an egg"
+              : pet.stage === "baby"
+              ? "young"
+              : "fully grown"
+          }
+          tint={flagging ? "text-[#B85B56]" : "text-[#5E7161]"}
+          alert={flagging}
+        />
+        <Metric
+          icon={Sparkles}
+          label="Course progress"
+          value={total ? `${Math.round((done / total) * 100)}%` : "—"}
+          sub={total ? `${done} of ${total} done` : "no plan yet"}
+          tint="text-[#8C593B]"
+        />
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-12">
       <section className="lg:col-span-5">
         <div className="rounded-3xl border border-[#E5E2D9] bg-white p-6 shadow-sm">
           <PetCompanion pet={pet} size={172} celebrateKey={celebrateKey} />
@@ -146,18 +205,57 @@ export const TodayView: React.FC<Props> = ({
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <Stat label="Day streak" value={String(pet.streak)} item={ITEM.wheat} />
           <Stat label="Total XP" value={String(pet.xp)} item={ITEM.diamond} />
+          <Stat label="Gems earned" value={String(studyLog.reduce((s, e) => s + e.gems, 0))} item={ITEM.emerald} />
           <Stat
             label="Growth"
             value={pet.stage === "egg" ? "Egg" : pet.stage === "baby" ? "Young" : "Grown"}
             item={ITEM.raspberry}
           />
         </div>
+
+        <button
+          onClick={onOpenTrajectory}
+          className="flex w-full items-center gap-3 rounded-2xl border border-[#E5E2D9] bg-white p-4 text-left transition-colors hover:border-[#8BA88E]"
+        >
+          <div className="rounded-xl border border-[#E5E2D9] bg-[#F0F4F0] p-2.5 text-[#5E7161]">
+            <TrendingUp className="h-4 w-4" />
+          </div>
+          <div className="flex-1">
+            <div className="text-xs font-bold">Where this is heading</div>
+            <div className="text-[11px] text-[#7A837C]">
+              A four-week forecast of staying with it versus drifting.
+            </div>
+          </div>
+          <span className="text-xs font-bold text-[#5E7161]">Open →</span>
+        </button>
       </section>
+      </div>
     </div>
   );
 };
+
+const Metric: React.FC<{
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  sub: string;
+  tint: string;
+  alert?: boolean;
+}> = ({ icon: Icon, label, value, sub, tint, alert }) => (
+  <div
+    className={`rounded-2xl border p-4 ${
+      alert ? "border-[#E8C5B0] bg-[#FFF5F5]" : "border-[#E5E2D9] bg-white"
+    }`}
+  >
+    <div className="mb-1.5 flex items-center gap-1.5">
+      <Icon className={`h-3.5 w-3.5 ${tint}`} />
+      <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A837C]">{label}</span>
+    </div>
+    <div className="font-serif text-2xl font-bold leading-none">{value}</div>
+    <div className="mt-1 text-[11px] text-[#7A837C]">{sub}</div>
+  </div>
+);
 
 const Stat: React.FC<{ label: string; value: string; item: number }> = ({ label, value, item }) => (
   <div className="flex items-center gap-3 rounded-2xl border border-[#E5E2D9] bg-white p-4">
