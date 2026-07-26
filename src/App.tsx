@@ -28,7 +28,8 @@ import {
   prefetchLesson,
 } from "./services/api";
 import { applyDecay, createPet, feedPet, recordStudy, stageFor, type PetState } from "./lib/petState";
-import type { PetSpecies } from "./lib/sprites";
+import { cropById, type PetSpecies } from "./lib/sprites";
+import { FarmView, WATER_COST } from "./components/FarmView";
 
 /** What another egg costs. Steep enough to be a milestone, not a whim. */
 const ADOPTION_COST = 40;
@@ -50,6 +51,7 @@ import { FOODS } from "./lib/sprites";
 import type {
   AnswerLogEntry,
   Course,
+  FarmPlot,
   Inventory,
   LearnerProfile,
   Learner,
@@ -74,6 +76,8 @@ const KEYS = {
   answers: "gemmagotchi_answers",
   timer: "gemmagotchi_timer",
   bench: "gemmagotchi_pets_bench",
+  dew: "gemmagotchi_dew",
+  farm: "gemmagotchi_farm",
   profile: "gemmagotchi_profile",
 };
 
@@ -116,6 +120,14 @@ function Gemmagotchi() {
   });
   /** Adopted pets not currently active. They rest; only the companion decays. */
   const [bench, setBench] = useState<PetState[]>(() => load<PetState[]>(KEYS.bench, []));
+  /** Dew: one minute of real study = one minute of water for the farm. */
+  const [dew, setDew] = useState<number>(() => load(KEYS.dew, 0));
+  const [farm, setFarm] = useState<FarmPlot[]>(() =>
+    load<FarmPlot[]>(
+      KEYS.farm,
+      Array.from({ length: 6 }, (_, id) => ({ id, crop: null, stage: 0 as const, lastWateredDay: null }))
+    )
+  );
   const [courses, setCourses] = useState<Course[]>(loadCourses);
   const [activeCourseId, setActiveCourseId] = useState<string | null>(() => {
     const stored = load<string | null>(KEYS.activeCourse, null);
@@ -174,6 +186,8 @@ function Gemmagotchi() {
   useEffect(() => { localStorage.setItem(KEYS.studyLog, JSON.stringify(studyLog)); }, [studyLog]);
   useEffect(() => { localStorage.setItem(KEYS.answers, JSON.stringify(answers)); }, [answers]);
   useEffect(() => { localStorage.setItem(KEYS.bench, JSON.stringify(bench)); }, [bench]);
+  useEffect(() => { localStorage.setItem(KEYS.dew, JSON.stringify(dew)); }, [dew]);
+  useEffect(() => { localStorage.setItem(KEYS.farm, JSON.stringify(farm)); }, [farm]);
   useEffect(() => {
     // The running pomodoro is real work in progress — it survives everything,
     // including a page reload. Only "End session" removes it.
@@ -510,6 +524,7 @@ function Gemmagotchi() {
     const result = recordStudy(pet, now(), 2, 15 + score * 2);
     setPet(result.pet);
     setGems((g) => g + result.gems);
+    setDew((d) => d + (finished?.durationMins ?? 10));
     logStudy({
       label: finished?.title ?? "Sub-lesson",
       gems: result.gems,
@@ -558,6 +573,7 @@ function Gemmagotchi() {
     const result = recordStudy(pet, now(), 2, Math.round(minutes * 2));
     setPet({ ...result.pet, health: Math.min(100, result.pet.health + minutes) });
     setGems((g) => g + result.gems);
+    setDew((d) => d + Math.max(1, Math.round(minutes)));
     logStudy({
       label: `${minutes < 1 ? "30-second" : `${minutes}-minute`} focus sprint`,
       gems: result.gems,
@@ -577,6 +593,16 @@ function Gemmagotchi() {
   function redeemReward(reward: Reward) {
     if (!pet || gems < reward.cost) return;
     setGems((g) => g - reward.cost);
+
+    if (reward.id === "lotus") {
+      const empty = farm.find((p) => p.stage === 0);
+      if (!empty) return;
+      setFarm((f) =>
+        f.map((p) => (p.id === empty.id ? { ...p, crop: "lotus", stage: 2 as const, lastWateredDay: null } : p))
+      );
+      setTab("farm");
+      return;
+    }
 
     if (reward.id === "masterclass") {
       setInventory((inv) =>
@@ -616,6 +642,41 @@ function Gemmagotchi() {
     // The incoming pet was resting, not neglected — it wakes at the time it
     // was benched, so it is not punished for the time you spent elsewhere.
     setPet({ ...next, lastStudiedAt: now() });
+    setCelebrate((c) => c + 1);
+  }
+
+  const virtualToday = Math.floor(now() / 86_400_000);
+
+  function plantCrop(plotId: number, cropId: string) {
+    setFarm((f) => f.map((p) => (p.id === plotId ? { ...p, crop: cropId, stage: 1 as const, lastWateredDay: null } : p)));
+  }
+
+  function waterPlot(plotId: number) {
+    const plot = farm.find((p) => p.id === plotId);
+    if (!plot || plot.stage === 0 || plot.stage === 3) return;
+    if (plot.lastWateredDay === virtualToday || dew < WATER_COST) return;
+    setDew((d) => d - WATER_COST);
+    setFarm((f) =>
+      f.map((p) =>
+        p.id === plotId
+          ? { ...p, stage: Math.min(3, p.stage + 1) as FarmPlot["stage"], lastWateredDay: virtualToday }
+          : p
+      )
+    );
+  }
+
+  /** Harvest pays the crop's own yield, and feeds the companion's growth. */
+  function harvestPlot(plotId: number) {
+    const plot = farm.find((p) => p.id === plotId);
+    const crop = cropById(plot?.crop ?? null);
+    if (!plot || plot.stage !== 3 || !crop || !pet) return;
+    setFarm((f) => f.map((p) => (p.id === plotId ? { ...p, crop: null, stage: 0 as const, lastWateredDay: null } : p)));
+    setGems((g) => g + crop.gemYield);
+    const growth = pet.growth + 1;
+    const stage = stageFor(growth);
+    if (stage !== pet.stage) confetti({ particleCount: 140, spread: 90, origin: { y: 0.6 } });
+    else confetti({ particleCount: 40, spread: 55, origin: { y: 0.6 } });
+    setPet({ ...pet, growth, stage });
     setCelebrate((c) => c + 1);
   }
 
@@ -695,7 +756,9 @@ function Gemmagotchi() {
                 celebrateKey={celebrate}
                 studyLog={studyLog}
                 bench={bench}
+                dew={dew}
                 onSwitchPet={switchPet}
+                onOpenFarm={() => setTab("farm")}
                 coach={
                   <CoachCard
                     answers={answers}
@@ -759,6 +822,19 @@ function Gemmagotchi() {
                     kind: "drill",
                   })
                 }
+              />
+            )}
+            {tab === "farm" && (
+              <FarmView
+                plots={farm}
+                dew={dew}
+                gems={gems}
+                pet={pet}
+                bench={bench}
+                today={virtualToday}
+                onPlant={plantCrop}
+                onWater={waterPlot}
+                onHarvest={harvestPlot}
               />
             )}
             {tab === "store" && (

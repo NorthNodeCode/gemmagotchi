@@ -215,6 +215,39 @@ export function lookFor(character: number): AvatarLayer[] {
 }
 
 // ---------------------------------------------------------------------------
+// Crops — crops.png is 6 cols x 37 rows of 16px cells, one crop per row,
+// growth stages left to right. Cells read off /dev/sprites, not guessed.
+// ---------------------------------------------------------------------------
+
+export const CROP_SHEET = "/pixelart/ui/crops.png";
+export const CROP_COLS = 6;
+export const CROP_ROWS = 37;
+
+export interface CropSpec {
+  id: string;
+  label: string;
+  /** Row in crops.png. */
+  row: number;
+  /** Columns for growth stages 1 (sprout), 2 (growing), 3 (mature). */
+  cells: [number, number, number];
+  gemYield: number;
+  /** Only obtainable through the gem sanctuary, never the seed picker. */
+  premium?: boolean;
+}
+
+export const CROPS: CropSpec[] = [
+  { id: "radish", label: "Radish of Recall", row: 7, cells: [1, 3, 5], gemYield: 10 },
+  { id: "wheat", label: "Golden Wheat", row: 9, cells: [1, 3, 5], gemYield: 15 },
+  { id: "tomato", label: "Tomato Vine", row: 2, cells: [1, 3, 5], gemYield: 20 },
+  { id: "cabbage", label: "Wisdom Cabbage", row: 8, cells: [1, 3, 5], gemYield: 25 },
+  { id: "pumpkin", label: "Prize Pumpkin", row: 3, cells: [1, 3, 5], gemYield: 30 },
+  // The lotus matures a column early — its row only has five stages.
+  { id: "lotus", label: "Crystal Lotus", row: 25, cells: [1, 3, 4], gemYield: 40, premium: true },
+];
+
+export const cropById = (id: string | null) => CROPS.find((c) => c.id === id) ?? null;
+
+// ---------------------------------------------------------------------------
 // Food the learner can buy and feed to the pet.
 // ---------------------------------------------------------------------------
 

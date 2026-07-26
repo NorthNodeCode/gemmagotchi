@@ -171,6 +171,15 @@ export interface CoachReport {
   nextBestAction: string;
 }
 
+export interface FarmPlot {
+  id: number;
+  crop: string | null;
+  /** 0 empty, 1 sprout, 2 growing, 3 ready to harvest. */
+  stage: 0 | 1 | 2 | 3;
+  /** Virtual day this plot was last watered — one watering per day per plot. */
+  lastWateredDay: number | null;
+}
+
 export interface ProviderInfo {
   provider: string;
   model: string;

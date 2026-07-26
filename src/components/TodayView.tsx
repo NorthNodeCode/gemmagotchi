@@ -5,7 +5,7 @@ import { AnimalSprite, ItemSprite } from "./PixelSprite";
 import { EGG_FOR_SPECIES, ITEM } from "../lib/sprites";
 import { daysBetween, GRACE_DAYS } from "../lib/petState";
 import { now } from "../lib/clock";
-import { Play, LifeBuoy, Loader2, Sparkles, Timer, Clock, Flame, Heart, TrendingUp } from "lucide-react";
+import { Play, LifeBuoy, Loader2, Sparkles, Timer, Clock, Droplets, Flame, Heart, TrendingUp } from "lucide-react";
 import { moodFor } from "../lib/petState";
 import { courseProgress } from "../lib/course";
 import type { Course, Nudge, PetState, StudyLogEntry, SubLesson } from "../types";
@@ -20,7 +20,9 @@ interface Props {
   studyLog: StudyLogEntry[];
   /** Adopted pets waiting their turn. */
   bench: PetState[];
+  dew: number;
   onSwitchPet: (id: string) => void;
+  onOpenFarm: () => void;
   /** The coach card, built by App (it owns the logs the coach reads). */
   coach?: React.ReactNode;
   onStartLesson: () => void;
@@ -47,7 +49,9 @@ export const TodayView: React.FC<Props> = ({
   celebrateKey,
   studyLog,
   bench,
+  dew,
   onSwitchPet,
+  onOpenFarm,
   coach,
   onStartLesson,
   onStartSprint,
@@ -248,6 +252,22 @@ export const TodayView: React.FC<Props> = ({
             item={ITEM.raspberry}
           />
         </div>
+
+        <button
+          onClick={onOpenFarm}
+          className="flex w-full items-center gap-3 rounded-2xl border border-[#E5E2D9] bg-white p-4 text-left transition-colors hover:border-[#8BA88E]"
+        >
+          <div className="rounded-xl border border-[#E5E2D9] bg-[#F0F4F0] p-2.5 text-[#5E7161]">
+            <Droplets className="h-4 w-4" />
+          </div>
+          <div className="flex-1">
+            <div className="text-xs font-bold">Spirit farm</div>
+            <div className="text-[11px] text-[#7A837C]">
+              {dew}m of dew waiting — every study minute earns one.
+            </div>
+          </div>
+          <span className="text-xs font-bold text-[#5E7161]">Visit →</span>
+        </button>
 
         <button
           onClick={onOpenTrajectory}

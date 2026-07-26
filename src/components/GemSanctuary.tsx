@@ -16,7 +16,7 @@ import type { Inventory } from "../types";
  * what an action pays is what makes the next action feel worth starting.
  */
 
-export type RewardId = "elixir" | "surge" | "masterclass";
+export type RewardId = "elixir" | "surge" | "masterclass" | "lotus";
 
 export interface Reward {
   id: RewardId;
@@ -43,6 +43,14 @@ export const REWARDS: Reward[] = [
     cost: 25,
     icon: Award,
     tint: "bg-[#FFF8F0] border-[#F0D194] text-[#D97706]",
+  },
+  {
+    id: "lotus",
+    label: "Crystal lotus seed",
+    detail: "A rare crop, planted half-grown on your farm. Harvest pays 40 gems.",
+    cost: 20,
+    icon: Sparkles,
+    tint: "bg-[#F0F4F6] border-[#C8D8E4] text-[#4A7B9D]",
   },
   {
     id: "masterclass",
@@ -183,5 +191,6 @@ export const GemSanctuary: React.FC<Props> = ({ gems, pet, inventory, onRedeem, 
 function blockedReason(id: RewardId, pet: PetState): string {
   if (id === "masterclass") return "Already unlocked — look for 'Go deeper' after a check question.";
   if (id === "elixir") return `${pet.name} is already at full energy.`;
+  if (id === "lotus") return "The farm has no empty plot for it right now.";
   return `${pet.name} is already fully grown.`;
 }

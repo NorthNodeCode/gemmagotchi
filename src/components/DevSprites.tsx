@@ -130,6 +130,24 @@ export const DevSprites: React.FC = () => {
         </div>
       </Section>
 
+      <Section
+        title="Crops sheet — 6 cols x 37 rows of 16px cells (crops.png)"
+        note="Each row appears to be one crop's growth stages left to right. Numbers are [col,row]."
+      >
+        <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(6, minmax(0,1fr))", maxWidth: 560 }}>
+          {Array.from({ length: 6 * 37 }, (_, i) => {
+            const col = i % 6;
+            const row = Math.floor(i / 6);
+            return (
+              <div key={i} className="flex flex-col items-center rounded-lg border border-[#E5E2D9] bg-white p-1">
+                <PixelSprite src="/pixelart/ui/crops.png" cols={6} rows={37} col={col} row={row} size={40} />
+                <span className="mt-0.5 font-mono text-[9px] text-[#7A837C]">{col},{row}</span>
+              </div>
+            );
+          })}
+        </div>
+      </Section>
+
       <Section title="Foods sold in the store">
         <div className="flex flex-wrap gap-5">
           {FOODS.map((f) => (

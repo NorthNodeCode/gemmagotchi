@@ -5,13 +5,14 @@ import { Flame, FastForward, RotateCcw, Cpu, Cloud, Bot } from "lucide-react";
 import { TimerPill, type TimerState } from "./FocusTimer";
 import type { Learner, PetState, ProviderInfo } from "../types";
 
-export type Tab = "today" | "courses" | "plan" | "drills" | "store" | "trajectory";
+export type Tab = "today" | "courses" | "plan" | "drills" | "farm" | "store" | "trajectory";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "today", label: "Today" },
   { id: "courses", label: "Courses" },
   { id: "plan", label: "Study plan" },
   { id: "drills", label: "Drills" },
+  { id: "farm", label: "Farm" },
   { id: "store", label: "Store" },
   { id: "trajectory", label: "Trajectory" },
 ];
