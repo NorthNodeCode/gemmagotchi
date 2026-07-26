@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: #FDFCF8;
+    color: #424B43;
+  }
+
+  h1, h2, h3, .font-serif {
+    font-family: 'Newsreader', Georgia, serif;
+  }
+}
+
+/* Custom theme helper utility colors matching Natural Tones */
+.bg-natural-canvas { background-color: #FDFCF8; }
+.bg-natural-card { background-color: #FFFFFF; }
+.bg-natural-sidebar { background-color: #F5F2EA; }
+.bg-natural-subtle { background-color: #EAE6D9; }
+.border-natural { border-color: #E5E2D9; }
+.text-natural-dark { color: #2D362E; }
+.text-natural-body { color: #424B43; }
+.text-natural-muted { color: #7A837C; }
+.bg-sage-primary { background-color: #5E7161; }
+.bg-sage-light { background-color: #8BA88E; }
+.text-sage-primary { color: #5E7161; }
+.border-sage { border-color: #8BA88E; }
+
