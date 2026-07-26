@@ -9,6 +9,7 @@ import {
   GEMMA_MODEL_HOSTED,
   GEMMA_MODEL_LOCAL,
 } from "./server/gemma";
+import { extractDocument } from "./server/extract";
 import {
   PET_VOICE,
   CURRICULUM_SYSTEM,
@@ -22,7 +23,34 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-app.use(express.json({ limit: "2mb" }));
+// Generous limit: lecture decks arrive base64-encoded in the JSON body.
+app.use(express.json({ limit: "25mb" }));
+
+/**
+ * Turn an uploaded PDF or PPTX into plain text the tutor can teach from.
+ * Files are sent base64-encoded so no multipart parser is needed.
+ */
+app.post("/api/extract", async (req, res) => {
+  const { filename, base64 } = req.body || {};
+  if (!filename || !base64) {
+    return res.status(400).json({ error: "filename and base64 are required" });
+  }
+  try {
+    const result = await extractDocument(String(filename), Buffer.from(base64, "base64"));
+    if (!result.chars) {
+      return res.json({
+        ...result,
+        warning: "No selectable text found — this file may be scanned images.",
+      });
+    }
+    res.json(result);
+  } catch (err) {
+    console.error("extract failed:", err);
+    res.status(422).json({
+      error: `Could not read ${filename}. Try exporting it as a PDF, or paste the text instead.`,
+    });
+  }
+});
 
 /** Which Gemma 4 model is actually serving requests — shown in the UI. */
 app.get("/api/provider", async (_req, res) => {

@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import { AvatarSprite, ItemSprite } from "./PixelSprite";
 import { AVATAR_COUNT, EGG_FOR_SPECIES, SPECIES_LIST, type PetSpecies } from "../lib/sprites";
 import { Loader2, ArrowRight, Sparkles } from "lucide-react";
+import { MaterialInput, type AttachedFile } from "./MaterialInput";
 
 export interface OnboardingResult {
   character: number;
@@ -33,6 +34,7 @@ export const Onboarding: React.FC<{
   const [subject, setSubject] = useState("");
   const [examDate, setExamDate] = useState(defaultExamDate());
   const [notes, setNotes] = useState("");
+  const [files, setFiles] = useState<AttachedFile[]>([]);
   const [minutesPerDay, setMinutesPerDay] = useState(20);
 
   const canFinish = subject.trim().length > 1 && notes.trim().length > 40;
@@ -149,35 +151,16 @@ export const Onboarding: React.FC<{
               </div>
 
               <div className="mt-4">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <label
-                    htmlFor="notes-field"
-                    className="text-xs font-bold uppercase tracking-wider text-[#7A837C]"
-                  >
-                    Your notes
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNotes(SAMPLE_NOTES);
-                      if (!subject) setSubject("Memory and Spaced Repetition");
-                    }}
-                    className="text-[11px] font-bold text-[#5E7161] underline underline-offset-2"
-                  >
-                    use sample notes
-                  </button>
-                </div>
-                <textarea
-                  id="notes-field"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={9}
-                  placeholder="Paste lecture notes, a chapter, a transcript…"
-                  className="w-full resize-y rounded-2xl border border-[#E5E2D9] bg-[#FDFCF8] px-4 py-3 font-mono text-xs leading-relaxed outline-none focus:border-[#5E7161]"
+                <MaterialInput
+                  notes={notes}
+                  onNotesChange={setNotes}
+                  files={files}
+                  onFilesChange={setFiles}
+                  onUseSample={() => {
+                    setNotes(SAMPLE_NOTES);
+                    if (!subject) setSubject("Memory and Spaced Repetition");
+                  }}
                 />
-                <div className="mt-1 text-right text-[11px] text-[#7A837C]">
-                  {notes.trim().length} characters
-                </div>
               </div>
 
               <label className="mt-2 block">

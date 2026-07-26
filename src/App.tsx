@@ -9,6 +9,7 @@ import { StoreView } from "./components/StoreView";
 import { TrajectoryView } from "./components/TrajectoryView";
 import { RescueModal } from "./components/RescueModal";
 import { DevSprites } from "./components/DevSprites";
+import { CoursesView } from "./components/CoursesView";
 import {
   buildCurriculum,
   fetchNudge,
@@ -32,7 +33,10 @@ import type {
 const KEYS = {
   learner: "gemmagotchi_learner",
   pet: "gemmagotchi_pet",
+  /** Legacy single-course key, migrated into `courses` on first load. */
   course: "gemmagotchi_course",
+  courses: "gemmagotchi_courses",
+  activeCourse: "gemmagotchi_active_course",
   gems: "gemmagotchi_gems",
   inventory: "gemmagotchi_inventory",
   minutes: "gemmagotchi_minutes",
@@ -48,6 +52,18 @@ function load<T>(key: string, fallback: T): T {
   }
 }
 
+/**
+ * Courses started life as a single object. Anyone who used the app before
+ * modules existed still has that key, so it is folded into the list rather
+ * than dropped — losing someone's course would be an unforced betrayal.
+ */
+function loadCourses(): Course[] {
+  const courses = load<Course[]>(KEYS.courses, []);
+  if (courses.length) return courses;
+  const legacy = load<Course | null>(KEYS.course, null);
+  return legacy ? [legacy] : [];
+}
+
 export default function App() {
   // Sprite inspector lives off the main app entirely — no state, no onboarding.
   if (typeof location !== "undefined" && location.pathname === "/dev/sprites") {
@@ -59,7 +75,12 @@ export default function App() {
 function Gemmagotchi() {
   const [learner, setLearner] = useState<Learner | null>(() => load<Learner | null>(KEYS.learner, null));
   const [pet, setPet] = useState<PetState | null>(() => load<PetState | null>(KEYS.pet, null));
-  const [course, setCourse] = useState<Course | null>(() => load<Course | null>(KEYS.course, null));
+  const [courses, setCourses] = useState<Course[]>(loadCourses);
+  const [activeCourseId, setActiveCourseId] = useState<string | null>(() => {
+    const stored = load<string | null>(KEYS.activeCourse, null);
+    const all = loadCourses();
+    return all.some((c) => c.id === stored) ? stored : all[0]?.id ?? null;
+  });
   const [gems, setGems] = useState<number>(() => load(KEYS.gems, 30));
   const [inventory, setInventory] = useState<Inventory>(() =>
     load<Inventory>(KEYS.inventory, { owned: [], food: {} })
@@ -83,7 +104,10 @@ function Gemmagotchi() {
   // Persist everything that matters.
   useEffect(() => { if (learner) localStorage.setItem(KEYS.learner, JSON.stringify(learner)); }, [learner]);
   useEffect(() => { if (pet) localStorage.setItem(KEYS.pet, JSON.stringify(pet)); }, [pet]);
-  useEffect(() => { if (course) localStorage.setItem(KEYS.course, JSON.stringify(course)); }, [course]);
+  useEffect(() => { localStorage.setItem(KEYS.courses, JSON.stringify(courses)); }, [courses]);
+  useEffect(() => {
+    if (activeCourseId) localStorage.setItem(KEYS.activeCourse, JSON.stringify(activeCourseId));
+  }, [activeCourseId]);
   useEffect(() => { localStorage.setItem(KEYS.gems, JSON.stringify(gems)); }, [gems]);
   useEffect(() => { localStorage.setItem(KEYS.inventory, JSON.stringify(inventory)); }, [inventory]);
   useEffect(() => { localStorage.setItem(KEYS.minutes, JSON.stringify(minutesPerDay)); }, [minutesPerDay]);
@@ -104,7 +128,62 @@ function Gemmagotchi() {
     settlePet();
   }, [settlePet, clockDays]);
 
+  /** The module today's lesson comes from. Everything downstream reads this. */
+  const course = useMemo(
+    () => courses.find((c) => c.id === activeCourseId) ?? courses[0] ?? null,
+    [courses, activeCourseId]
+  );
+
   const nextModule = useMemo(() => course?.modules.find((m) => !m.completed) ?? null, [course]);
+
+  const updateCourse = useCallback((id: string, fn: (c: Course) => Course) => {
+    setCourses((all) => all.map((c) => (c.id === id ? fn(c) : c)));
+  }, []);
+
+  /** Plan a course from raw material. Shared by onboarding and "Add module". */
+  const planCourse = useCallback(
+    async (req: { subject: string; examDate: string; notes: string; minutesPerDay?: number }) => {
+      const t = now();
+      const plan = await buildCurriculum({
+        notes: req.notes,
+        subject: req.subject,
+        examDate: req.examDate,
+        minutesPerDay: req.minutesPerDay ?? minutesPerDay,
+      });
+      const created: Course = {
+        id: `course-${t}`,
+        title: plan.title,
+        subject: req.subject,
+        description: plan.description,
+        examDate: req.examDate,
+        notes: req.notes,
+        estimatedWeeks: plan.estimatedWeeks,
+        modules: plan.modules,
+      };
+      setCourses((all) => [...all, created]);
+      setActiveCourseId(created.id);
+      return created;
+    },
+    [minutesPerDay]
+  );
+
+  async function addCourse(req: { subject: string; examDate: string; notes: string }) {
+    setBuilding(true);
+    try {
+      await planCourse(req);
+      setTab("plan");
+    } finally {
+      setBuilding(false);
+    }
+  }
+
+  function deleteCourse(id: string) {
+    setCourses((all) => {
+      const remaining = all.filter((c) => c.id !== id);
+      if (id === activeCourseId) setActiveCourseId(remaining[0]?.id ?? null);
+      return remaining;
+    });
+  }
 
   /**
    * Warm the next sub-lesson in the background. Generation on a local model
@@ -137,26 +216,15 @@ function Gemmagotchi() {
 
   async function handleOnboarding(result: OnboardingResult) {
     setBuilding(true);
-    const t = now();
     try {
-      const plan = await buildCurriculum({
-        notes: result.notes,
+      await planCourse({
         subject: result.subject,
         examDate: result.examDate,
+        notes: result.notes,
         minutesPerDay: result.minutesPerDay,
       });
-      setCourse({
-        id: `course-${t}`,
-        title: plan.title,
-        subject: result.subject,
-        description: plan.description,
-        examDate: result.examDate,
-        notes: result.notes,
-        estimatedWeeks: plan.estimatedWeeks,
-        modules: plan.modules,
-      });
       setLearner({ character: result.character, name: "You" });
-      setPet(createPet(result.petName, result.species, t));
+      setPet(createPet(result.petName, result.species, now()));
       setMinutesPerDay(result.minutesPerDay);
     } finally {
       setBuilding(false);
@@ -180,14 +248,12 @@ function Gemmagotchi() {
   }
 
   function handleLessonComplete(moduleId: string, score: number) {
-    setCourse((c) =>
-      c
-        ? {
-            ...c,
-            modules: c.modules.map((m) => (m.id === moduleId ? { ...m, completed: true } : m)),
-          }
-        : c
-    );
+    if (course) {
+      updateCourse(course.id, (c) => ({
+        ...c,
+        modules: c.modules.map((m) => (m.id === moduleId ? { ...m, completed: true } : m)),
+      }));
+    }
     // Finishing counts for more than any single answer inside it.
     setPet((p) => {
       if (!p) return p;
@@ -283,6 +349,17 @@ function Gemmagotchi() {
                 celebrateKey={celebrate}
                 onStartLesson={() => nextModule && setActiveModule(nextModule)}
                 onRescue={openRescue}
+                onOpenPlan={() => setTab("plan")}
+              />
+            )}
+            {tab === "courses" && (
+              <CoursesView
+                courses={courses}
+                activeCourseId={course.id}
+                busy={building}
+                onSetActive={setActiveCourseId}
+                onDelete={deleteCourse}
+                onAdd={addCourse}
                 onOpenPlan={() => setTab("plan")}
               />
             )}
