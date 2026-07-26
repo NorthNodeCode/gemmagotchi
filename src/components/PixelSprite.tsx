@@ -4,9 +4,12 @@ import {
   ANIMAL_ROWS,
   ITEMS_SHEET,
   ITEM_COLS,
+  LAYER_COLS_PER_COLOUR,
+  LAYER_ROWS,
   SPECIES,
   avatarFile,
   itemCell,
+  lookFor,
   type PetSpecies,
 } from "../lib/sprites";
 
@@ -109,7 +112,11 @@ export const ItemSprite: React.FC<{
   );
 };
 
-/** A character from the avatar pack, standing still by default. */
+/**
+ * A character from the avatar pack: the bare body with hair, clothes and eyes
+ * stacked on top. The pack is built as separable layers precisely so they can
+ * be composed like this, and every layer shares the body's frame coordinates.
+ */
 export const AvatarSprite: React.FC<{
   character: number;
   size: number;
@@ -119,17 +126,35 @@ export const AvatarSprite: React.FC<{
   style?: React.CSSProperties;
 }> = ({ character, size, row = 0, animate = false, className, style }) => {
   const frame = useFrame(8, 6, animate);
+  const col = animate ? frame : 0;
+
   return (
-    <PixelSprite
-      src={avatarFile(character)}
-      cols={8}
-      rows={4}
-      col={animate ? frame : 0}
-      row={row}
-      size={size}
+    <div
       className={className}
-      style={style}
-    />
+      style={{ position: "relative", width: size, height: size, ...style }}
+    >
+      <PixelSprite
+        src={avatarFile(character)}
+        cols={8}
+        rows={4}
+        col={col}
+        row={row}
+        size={size}
+        style={{ position: "absolute", inset: 0 }}
+      />
+      {lookFor(character).map((layer, i) => (
+        <PixelSprite
+          key={i}
+          src={layer.src}
+          cols={layer.cols}
+          rows={LAYER_ROWS}
+          col={layer.colour * LAYER_COLS_PER_COLOUR + col}
+          row={row}
+          size={size}
+          style={{ position: "absolute", inset: 0 }}
+        />
+      ))}
+    </div>
   );
 };
 

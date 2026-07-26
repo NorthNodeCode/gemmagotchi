@@ -105,7 +105,7 @@ export function itemCell(index: number): { col: number; row: number } {
   return { col: index % ITEM_COLS, row: Math.floor(index / ITEM_COLS) };
 }
 
-/** Named items we actually use, by their index in the pack's item list. */
+/** Named items, by their true cell index in items.png (verified visually). */
 export const ITEM = {
   carrot: 0,
   tomato: 1,
@@ -113,34 +113,41 @@ export const ITEM = {
   pumpkin: 3,
   corn: 4,
   potato: 5,
-  watermelon: 6,
+  cabbage: 6,
   lettuce: 8,
   wheat: 9,
-  apple: 10,
-  cherry: 12,
-  orange: 14,
-  pear: 17,
-  peach: 18,
-  cheese: 23,
-  whiteEgg: 30,
-  brownEgg: 32,
-  greenEgg: 34,
-  blueEgg: 36,
-  hay: 45,
-  raspberry: 46,
-  wildBerries: 47,
-  diamond: 50,
-  ruby: 51,
-  emerald: 52,
+  apple: 20,
+  avocado: 21,
+  cherry: 22,
+  orange: 24,
+  pear: 27,
+  peach: 28,
+  milk: 30,
+  butter: 32,
+  cheese: 33,
+  whiteEgg: 40,
+  smallWhiteEgg: 41,
+  brownEgg: 42,
+  smallBrownEgg: 43,
+  greenEgg: 44,
+  blueEgg: 46,
+  hay: 56,
+  raspberry: 60,
+  wildBerries: 61,
+  mushroom: 62,
+  diamond: 64,
+  ruby: 65,
+  emerald: 66,
+  loveHeart: 116,
 } as const;
 
 /** Each species hatches from a differently coloured egg. */
 export const EGG_FOR_SPECIES: Record<PetSpecies, number> = {
   chicken: ITEM.whiteEgg,
-  bunny: ITEM.brownEgg,
-  pig: ITEM.whiteEgg,
-  sheep: ITEM.whiteEgg,
-  goat: ITEM.brownEgg,
+  bunny: ITEM.smallBrownEgg,
+  pig: ITEM.smallWhiteEgg,
+  sheep: ITEM.blueEgg,
+  goat: ITEM.greenEgg,
   cow: ITEM.brownEgg,
 };
 
@@ -151,6 +158,50 @@ export const EGG_FOR_SPECIES: Record<PetSpecies, number> = {
 export const AVATAR_CELL = 32;
 export const AVATAR_COUNT = 8;
 export const avatarFile = (n: number) => `/pixelart/avatars/char${n}.png`;
+
+/**
+ * Hair, clothes and eyes ship as the full merged animation sheet (256x1568,
+ * i.e. 8 cols x 49 rows of 32px cells) repeated horizontally once per colour
+ * variant. So colour c's standing-facing-viewer frame is at column c * 8,
+ * row 0 — the same coordinates the bare body uses, which is what makes the
+ * layers line up when stacked.
+ */
+export const LAYER_ROWS = 49;
+export const LAYER_COLS_PER_COLOUR = 8;
+export const layerCols = (sheetWidth: number) => sheetWidth / AVATAR_CELL;
+
+export interface AvatarLayer {
+  src: string;
+  /** Total columns across the whole sheet (all colour variants). */
+  cols: number;
+  colour: number;
+}
+
+const HAIR_STYLES = [
+  "/pixelart/avatars/layers/hair_bob.png",
+  "/pixelart/avatars/layers/hair_curly.png",
+  "/pixelart/avatars/layers/hair_braids.png",
+  "/pixelart/avatars/layers/hair_buzz.png",
+];
+
+/** Hair and clothes sheets are 3584 and 2560 wide respectively. */
+const HAIR_COLS = 3584 / AVATAR_CELL;
+const CLOTHES_COLS = 2560 / AVATAR_CELL;
+const EYES_COLS = 3584 / AVATAR_CELL;
+
+/**
+ * A stable, varied look per character slot, so the eight choices read as eight
+ * different people rather than eight bare bodies.
+ */
+export function lookFor(character: number): AvatarLayer[] {
+  const i = Math.max(0, character - 1);
+  return [
+    { src: "/pixelart/avatars/layers/eyes.png", cols: EYES_COLS, colour: i % 3 },
+    { src: "/pixelart/avatars/layers/clothes_pants.png", cols: CLOTHES_COLS, colour: (i + 2) % 10 },
+    { src: "/pixelart/avatars/layers/clothes_basic.png", cols: CLOTHES_COLS, colour: i % 10 },
+    { src: HAIR_STYLES[i % HAIR_STYLES.length], cols: HAIR_COLS, colour: (i * 3) % 14 },
+  ];
+}
 
 // ---------------------------------------------------------------------------
 // Food the learner can buy and feed to the pet.
