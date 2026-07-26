@@ -47,6 +47,15 @@ The Pomodoro Technique is a popular time-management method that breaks work into
 > "For the days you can't face a lesson: a micro-task that's impossible to fail. Completing it pays a **comeback bonus that scales with how long you were away** — the app is warmest exactly when other apps punish you."
 - Complete it → confetti + gems.
 
+### NEW BEATS (weave in as time allows)
+- **Calibration (onboarding, ~15s):** answer the three timed questions fast. Say: *"It just measured my answer speed and asked how deep I want explanations — that's my learner profile, and it changes how Gemma teaches."*
+- **Diagnostic (after material lands):** *"Before planning, it quizzes me on my own lecture — what I miss gets taught first. Watch the plan get built around my gaps."*
+- **Coach card (Today):** point at the read citing real numbers, and the model tag. *"A second, larger Gemma — `gemma-4-31b-it` — studies how I learn. Every number it cites is computed locally from my answer log."* Click the weak-point chip → a drill starts on exactly that topic.
+- **Profile:** open "adjust", override depth to high. *"It measured me, and I can overrule it. The next lesson is visibly deeper."*
+- **Course map:** the week accordion. *"Real modules are weeks of topics — upload the whole semester and each file becomes a week."*
+- **Trajectory:** drag the skipped-days slider 0→5. *"Instant — the curve is local math; Gemma writes the interpretation. Works with the Wi-Fi off."*
+- **Timer:** start a focus round, minimise it, change tabs — point at the pill still counting.
+
 ### 2:20 — Breadth in 30 seconds
 - **Ask Gemma** (header) → Socratic partner: click "⚡ Test my recall", show the answer, then the "🐾 Ask Nibbles" chip — the pet answers in character.
 > "Multi-turn, grounded in your notes, three modes — and yes, you can talk to the pet."

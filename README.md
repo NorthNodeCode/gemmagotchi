@@ -38,6 +38,10 @@ GEMINI_API_KEY=your-key
 Nothing else in the codebase changes. `GEMMA_PROVIDER=auto` (the default)
 prefers local and falls back to hosted automatically if Ollama isn't running.
 
+## The coach — a second Gemma
+
+Every answered question is logged (topic, correctness, time-to-answer). A coach persona running on **`gemma-4-31b-it`** (hosted, with local fallback) reads client-computed aggregates and reports back — weak topics become one-click drills, and a visible, editable profile (depth · pace · challenge) genuinely changes how lessons, questions and plans are generated. Onboarding calibrates your speed; every new course starts with a skippable three-question diagnostic that shapes the plan.
+
 ## How Gemma 4 is used
 
 Eight distinct jobs, all through the same seam, each with its own system-role
@@ -51,7 +55,10 @@ persona in [`server/prompts.ts`](server/prompts.ts):
 | `/api/ai/grade` | Marks free-text answers honestly but kindly |
 | `/api/ai/nudge` | Speaks as the pet, in character, given live pet state |
 | `/api/ai/rescue` | A 2-minute task you cannot fail, for when you can't start |
-| `/api/ai/trajectory` | Forecasts where consistency vs. drift leads |
+| `/api/ai/trajectory` | Writes the interpretation over a locally computed forecast |
+| `/api/ai/drill` | Retrieval practice sets — per topic or whole-course big review |
+| `/api/ai/socratic-chat` | Multi-turn Socratic partner (3 modes, pet chip) |
+| `/api/ai/coach` | The learner-model coach, on `gemma-4-31b-it` when a key exists |
 
 Engineering notes: Gemma has no `responseMimeType`, so JSON is demanded in the
 prompt and repaired defensively on the way back (fences stripped, truncated
