@@ -348,19 +348,23 @@ function Gemmagotchi() {
     []
   );
 
-  /** A correct answer feeds the pet's growth — this is the core reward. */
+  /**
+   * A correct answer feeds the pet's growth — this is the core reward.
+   *
+   * The reward is computed OUTSIDE the state updater on purpose. Paying gems or
+   * writing a log entry from inside one makes the updater impure, and React
+   * invokes updaters more than once — which quietly paid every reward twice.
+   */
   function handleCorrect(weight: number) {
-    setPet((p) => {
-      if (!p) return p;
-      const result = recordStudy(p, now(), weight, 5);
-      setGems((g) => g + result.gems);
-      if (result.hatched || result.grewUp) {
-        confetti({ particleCount: 140, spread: 90, origin: { y: 0.6 } });
-      } else if (result.comebackDays > 0) {
-        confetti({ particleCount: 80, spread: 70, origin: { y: 0.7 } });
-      }
-      return result.pet;
-    });
+    if (!pet) return;
+    const result = recordStudy(pet, now(), weight, 5);
+    setPet(result.pet);
+    setGems((g) => g + result.gems);
+    if (result.hatched || result.grewUp) {
+      confetti({ particleCount: 140, spread: 90, origin: { y: 0.6 } });
+    } else if (result.comebackDays > 0) {
+      confetti({ particleCount: 80, spread: 70, origin: { y: 0.7 } });
+    }
     setCelebrate((c) => c + 1);
   }
 
@@ -370,18 +374,16 @@ function Gemmagotchi() {
       updateCourse(course.id, (c) => markModuleComplete(c, moduleId));
     }
     // Finishing counts for more than any single answer inside it.
-    setPet((p) => {
-      if (!p) return p;
-      const result = recordStudy(p, now(), 2, 15 + score * 2);
-      setGems((g) => g + result.gems);
-      logStudy({
-        label: finished?.title ?? "Sub-lesson",
-        gems: result.gems,
-        wasComeback: result.comebackDays > 0,
-        durationMins: finished?.durationMins ?? 10,
-        kind: "lesson",
-      });
-      return result.pet;
+    if (!pet) return;
+    const result = recordStudy(pet, now(), 2, 15 + score * 2);
+    setPet(result.pet);
+    setGems((g) => g + result.gems);
+    logStudy({
+      label: finished?.title ?? "Sub-lesson",
+      gems: result.gems,
+      wasComeback: result.comebackDays > 0,
+      durationMins: finished?.durationMins ?? 10,
+      kind: "lesson",
     });
   }
 
@@ -414,18 +416,16 @@ function Gemmagotchi() {
    * material is study — only the shape is different.
    */
   function completeSprint(minutes: number) {
-    setPet((p) => {
-      if (!p) return p;
-      const result = recordStudy(p, now(), 2, minutes * 2);
-      setGems((g) => g + result.gems);
-      logStudy({
-        label: `${minutes}-minute focus sprint`,
-        gems: result.gems,
-        wasComeback: result.comebackDays > 0,
-        durationMins: minutes,
-        kind: "sprint",
-      });
-      return { ...result.pet, health: Math.min(100, result.pet.health + minutes) };
+    if (!pet) return;
+    const result = recordStudy(pet, now(), 2, Math.round(minutes * 2));
+    setPet({ ...result.pet, health: Math.min(100, result.pet.health + minutes) });
+    setGems((g) => g + result.gems);
+    logStudy({
+      label: `${minutes < 1 ? "30-second" : `${minutes}-minute`} focus sprint`,
+      gems: result.gems,
+      wasComeback: result.comebackDays > 0,
+      durationMins: minutes,
+      kind: "sprint",
     });
     setCelebrate((c) => c + 1);
     confetti({ particleCount: 140, spread: 90, origin: { y: 0.6 } });
@@ -437,7 +437,7 @@ function Gemmagotchi() {
    * hatching still fires the celebration.
    */
   function redeemReward(reward: Reward) {
-    if (gems < reward.cost) return;
+    if (!pet || gems < reward.cost) return;
     setGems((g) => g - reward.cost);
 
     if (reward.id === "masterclass") {
@@ -447,14 +447,14 @@ function Gemmagotchi() {
       return;
     }
 
-    setPet((p) => {
-      if (!p) return p;
-      if (reward.id === "elixir") return feedPet(p, 50);
-      const growth = p.growth + 3;
+    if (reward.id === "elixir") {
+      setPet(feedPet(pet, 50));
+    } else {
+      const growth = pet.growth + 3;
       const stage = stageFor(growth);
-      if (stage !== p.stage) confetti({ particleCount: 140, spread: 90, origin: { y: 0.6 } });
-      return { ...p, growth, stage };
-    });
+      if (stage !== pet.stage) confetti({ particleCount: 140, spread: 90, origin: { y: 0.6 } });
+      setPet({ ...pet, growth, stage });
+    }
     setCelebrate((c) => c + 1);
   }
 
@@ -510,13 +510,19 @@ function Gemmagotchi() {
       />
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        {sprinting ? (
+        {sprinting || tab === "focus" ? (
           <SprintRoom
             pet={pet}
             course={course}
+            hasMasterclass={inventory.owned.includes("masterclass")}
+            studyLog={studyLog}
             onComplete={completeSprint}
+            onCorrect={handleCorrect}
             onRescue={openRescue}
-            onExit={() => setSprinting(false)}
+            onExit={() => {
+              setSprinting(false);
+              setTab("today");
+            }}
           />
         ) : activeModule ? (
           <TutorRoom
@@ -541,7 +547,7 @@ function Gemmagotchi() {
                 studyLog={studyLog}
                 onOpenTrajectory={() => setTab("trajectory")}
                 onStartLesson={() => nextModule && setActiveModule(nextModule)}
-                onStartSprint={() => setSprinting(true)}
+                onStartSprint={() => setTab("focus")}
                 onRescue={openRescue}
                 onOpenPlan={() => setTab("plan")}
               />

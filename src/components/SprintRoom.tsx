@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { ArrowLeft, LifeBuoy, Loader2, Pause, Play, RotateCcw, Sparkles } from "lucide-react";
+import { ArrowLeft, History, LifeBuoy, Loader2, Pause, Play, RotateCcw, Sparkles, Zap } from "lucide-react";
 import { PetCompanion } from "./PetCompanion";
 import { fetchNudge } from "../services/api";
 import { moodFor, type PetState } from "../lib/petState";
-import type { Course, Nudge } from "../types";
+import { allNotes, currentTopic } from "../lib/course";
+import { QuestionCard } from "./TutorRoom";
+import type { CheckQuestion, Course, Nudge, StudyLogEntry } from "../types";
 
 /**
  * Sprint mode: no lesson, just time.
@@ -20,15 +22,34 @@ import type { Course, Nudge } from "../types";
 const LENGTHS = [15, 25, 45];
 const NUDGE_EVERY_SECONDS = 5 * 60;
 
+/**
+ * A half-minute sprint so the completion payout can actually be tested without
+ * sitting through fifteen real minutes. Off unless explicitly switched on.
+ */
+const DEV_MODE =
+  typeof localStorage !== "undefined" && localStorage.getItem("gemmagotchi_dev") === "1";
+
 interface Props {
   pet: PetState;
   course: Course | null;
+  hasMasterclass: boolean;
+  studyLog: StudyLogEntry[];
   onComplete: (minutes: number) => void;
+  onCorrect: (weight: number) => void;
   onRescue: () => void;
   onExit: () => void;
 }
 
-export const SprintRoom: React.FC<Props> = ({ pet, course, onComplete, onRescue, onExit }) => {
+export const SprintRoom: React.FC<Props> = ({
+  pet,
+  course,
+  hasMasterclass,
+  studyLog,
+  onComplete,
+  onCorrect,
+  onRescue,
+  onExit,
+}) => {
   const [minutes, setMinutes] = useState(25);
   const [remaining, setRemaining] = useState(25 * 60);
   const [running, setRunning] = useState(false);
@@ -36,6 +57,12 @@ export const SprintRoom: React.FC<Props> = ({ pet, course, onComplete, onRescue,
   const [nudge, setNudge] = useState<Nudge | null>(null);
   const [nudging, setNudging] = useState(false);
   const lastNudgeAt = useRef(25 * 60);
+
+  // Optional drills alongside the timer — retrieval practice while you work.
+  const [drills, setDrills] = useState<CheckQuestion[]>([]);
+  const [drillIndex, setDrillIndex] = useState(0);
+  const [drillsLoading, setDrillsLoading] = useState(false);
+  const drillsRequested = useRef(false);
 
   // The countdown itself.
   useEffect(() => {
@@ -74,6 +101,41 @@ export const SprintRoom: React.FC<Props> = ({ pet, course, onComplete, onRescue,
       cancelled = true;
     };
   }, [running, remaining, finished, pet.health, course?.subject, minutes]);
+
+  /**
+   * One drill set per sprint, fetched when the timer starts. Generation on a
+   * laptop model takes a while, so it is requested once and appears whenever it
+   * lands rather than gating the timer on it.
+   */
+  useEffect(() => {
+    if (!running || drillsRequested.current || !course) return;
+    drillsRequested.current = true;
+    const topic = currentTopic(course);
+    setDrillsLoading(true);
+    fetch("/api/ai/drill", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subject: course.subject,
+        notes: topic?.notes ?? allNotes(course),
+        count: 5,
+        scope: "module",
+        topics: topic ? [topic.title] : [],
+      }),
+    })
+      .then((r) => r.json())
+      .then((d) =>
+        setDrills(
+          (d.questions ?? []).map((q: any, i: number) => ({
+            ...q,
+            id: q.id || `s${i}`,
+            kind: q.kind === "text" ? "text" : "mcq",
+          }))
+        )
+      )
+      .catch(() => {})
+      .finally(() => setDrillsLoading(false));
+  }, [running, course]);
 
   function choose(m: number) {
     setMinutes(m);
@@ -125,7 +187,7 @@ export const SprintRoom: React.FC<Props> = ({ pet, course, onComplete, onRescue,
 
             {!running && !finished && (
               <div className="mb-6 flex justify-center gap-2">
-                {LENGTHS.map((m) => (
+                {(DEV_MODE ? [0.5, ...LENGTHS] : LENGTHS).map((m) => (
                   <button
                     key={m}
                     onClick={() => choose(m)}
@@ -135,7 +197,7 @@ export const SprintRoom: React.FC<Props> = ({ pet, course, onComplete, onRescue,
                         : "border-[#E5E2D9] bg-[#FDFCF8] text-[#7A837C] hover:border-[#8BA88E]"
                     }`}
                   >
-                    {m} min
+                    {m < 1 ? "30s" : `${m} min`}
                   </button>
                 ))}
               </div>
@@ -144,7 +206,7 @@ export const SprintRoom: React.FC<Props> = ({ pet, course, onComplete, onRescue,
             {finished ? (
               <div>
                 <p className="font-serif text-xl font-bold text-[#5E7161]">
-                  {minutes} minutes done.
+                  {minutes < 1 ? "30 seconds" : `${minutes} minutes`} done.
                 </p>
                 <p className="mt-1 text-sm text-[#7A837C]">
                   {pet.name} sat with you the whole way.
@@ -169,7 +231,7 @@ export const SprintRoom: React.FC<Props> = ({ pet, course, onComplete, onRescue,
                   ) : (
                     <>
                       <Play className="h-4 w-4 fill-current" />{" "}
-                      {elapsed > 0 ? "Resume" : `Start ${minutes} minutes`}
+                      {elapsed > 0 ? "Resume" : minutes < 1 ? "Start 30 seconds" : `Start ${minutes} minutes`}
                     </>
                   )}
                 </button>
@@ -225,8 +287,67 @@ export const SprintRoom: React.FC<Props> = ({ pet, course, onComplete, onRescue,
               streak just like a sub-lesson.
             </p>
           </div>
+
+          {/* Recent sessions, so the timer sits in a history rather than alone. */}
+          {studyLog.length > 0 && (
+            <div className="mt-5 rounded-3xl border border-[#E5E2D9] bg-white p-5">
+              <h4 className="mb-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#7A837C]">
+                <History className="h-3.5 w-3.5" /> Recent sessions
+              </h4>
+              <ul className="space-y-1.5">
+                {[...studyLog].slice(-5).reverse().map((e) => (
+                  <li key={e.id} className="flex items-center gap-2 text-[11px]">
+                    <span className="rounded-md bg-[#F5F2EA] px-1.5 py-0.5 font-mono text-[10px] text-[#5E7161]">
+                      {e.kind}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{e.label}</span>
+                    <span className="shrink-0 text-[#7A837C]">{e.durationMins}m</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       </div>
+
+      {/* Drills sit below rather than beside: they are optional company for the
+          timer, not a second thing competing for attention at the same size. */}
+      {(drills.length > 0 || drillsLoading) && !finished && (
+        <div className="mx-auto mt-5 max-w-3xl">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="flex items-center gap-1.5 font-serif text-lg font-bold">
+              <Zap className="h-4 w-4 text-[#D97706]" /> While you work
+            </h3>
+            {drills.length > 0 && (
+              <span className="text-[11px] text-[#7A837C]">
+                {Math.min(drillIndex + 1, drills.length)} of {drills.length} · optional
+              </span>
+            )}
+          </div>
+
+          {drillsLoading && drills.length === 0 ? (
+            <div className="flex items-center gap-2 rounded-3xl border border-[#E5E2D9] bg-white p-5 text-xs text-[#7A837C]">
+              <Loader2 className="h-4 w-4 animate-spin" /> Gemma 4 is writing a few questions on{" "}
+              {currentTopic(course)?.title ?? course?.subject} — answer them whenever you like.
+            </div>
+          ) : drillIndex < drills.length ? (
+            <QuestionCard
+              key={drills[drillIndex].id}
+              question={drills[drillIndex]}
+              index={drillIndex}
+              total={drills.length}
+              subject={course?.subject ?? ""}
+              hasMasterclass={hasMasterclass}
+              onResolved={(correct) => correct && onCorrect(1)}
+              onNext={() => setDrillIndex((i) => i + 1)}
+            />
+          ) : (
+            <div className="rounded-3xl border border-[#E5E2D9] bg-[#F0F4F0] p-5 text-center text-xs font-bold text-[#5E7161]">
+              That's the set — back to the work itself.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
