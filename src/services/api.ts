@@ -18,13 +18,16 @@ import type {
   TrajectoryForecast,
 } from "../types";
 import { daysBetween, moodFor } from "../lib/petState";
+import { currentLevels } from "../lib/learnerModel";
 import { now } from "../lib/clock";
 
 async function post<T>(path: string, body: unknown): Promise<T> {
+  // Every request carries the learner's current levels; endpoints that do not
+  // adapt to them simply ignore the field.
   const res = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...(body as object), levels: currentLevels() }),
   });
   if (!res.ok) throw new Error(`${path} returned ${res.status}`);
   return (await res.json()) as T;
@@ -60,6 +63,7 @@ export async function buildCurriculum(input: {
   subject: string;
   examDate?: string;
   minutesPerDay?: number;
+  baseline?: string;
 }): Promise<Pick<Course, "title" | "description" | "estimatedWeeks"> & { modules: SubLesson[] }> {
   const data = await post<any>("/api/ai/curriculum", input);
   return {

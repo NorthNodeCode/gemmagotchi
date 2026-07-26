@@ -16,6 +16,10 @@ import {
   LESSON_SYSTEM,
   GRADER_SYSTEM,
   DRILL_SYSTEM,
+  COACH_SYSTEM,
+  DEPTH_RULES,
+  CHALLENGE_RULES,
+  PACE_RULES,
   SOCRATIC_MODES,
   petStateBlock,
   type SocraticMode,
@@ -66,16 +70,18 @@ app.get("/api/provider", async (_req, res) => {
 //    This is the one place we spend thinking tokens: it is genuine planning.
 // ---------------------------------------------------------------------------
 app.post("/api/ai/curriculum", async (req, res) => {
-  const { notes, subject, examDate, minutesPerDay } = req.body || {};
+  const { notes, subject, examDate, minutesPerDay, levels, baseline } = req.body || {};
+  const pace = String(levels?.pace || "medium");
+  const paceRule = PACE_RULES[pace] ?? "";
   try {
     const daysLeft = examDate
       ? Math.max(1, Math.ceil((new Date(examDate).getTime() - Date.now()) / 86_400_000))
       : 14;
 
     const { data, meta } = await generateJSON({
-      system: CURRICULUM_SYSTEM,
+      system: paceRule ? `${CURRICULUM_SYSTEM}\n\n${paceRule}` : CURRICULUM_SYSTEM,
       thinking: true,
-      cacheKey: "curriculum",
+      cacheKey: `curriculum:${pace}`,
       maxTokens: 1600,
       prompt: `Build a study plan from these notes.
 
@@ -88,7 +94,10 @@ NOTES:
 ${String(notes || "").slice(0, 12000)}
 """
 
-Split the material into 4 to 6 sub-lessons. Each sub-lesson teaches exactly ONE concept and must be teachable in about 5 minutes. Order them so earlier sub-lessons build the vocabulary later ones need. Front-load whatever is most likely to be examined.
+${baseline ? `LEARNER BASELINE (from a diagnostic quiz they just took on this material): ${String(baseline).slice(0, 600)}
+Order the plan so the weaknesses named above are shored up EARLY, and do not spend a whole sub-lesson on what the baseline shows they already know.
+
+` : ""}Split the material into 4 to 6 sub-lessons. Each sub-lesson teaches exactly ONE concept and must be teachable in about 5 minutes. Order them so earlier sub-lessons build the vocabulary later ones need. Front-load whatever is most likely to be examined.
 
 Return JSON of this exact shape:
 {
@@ -140,7 +149,9 @@ Return JSON of this exact shape:
 // 2. Lesson — teach ONE sub-lesson, then check understanding.
 // ---------------------------------------------------------------------------
 app.post("/api/ai/lesson", async (req, res) => {
-  const { moduleTitle, sourceExcerpt, notes, subject, previousLessons } = req.body || {};
+  const { moduleTitle, sourceExcerpt, notes, subject, previousLessons, levels } = req.body || {};
+  const depth = String(levels?.depth || "medium");
+  const depthRule = DEPTH_RULES[depth] ?? "";
   try {
     const source = String(sourceExcerpt || notes || "").slice(0, 8000);
     const context = `SUBJECT: ${subject || "the subject"}
@@ -158,14 +169,14 @@ ${source}
     // separate request (see /api/ai/checks) so the learner can start reading
     // while they generate.
     const lessonResult = await generate({
-      system: LESSON_SYSTEM,
-      cacheKey: "lesson-prose",
-      maxTokens: 1000,
+      system: depthRule ? `${LESSON_SYSTEM}\n\n${depthRule}` : LESSON_SYSTEM,
+      cacheKey: `lesson-prose:${depth}`,
+      maxTokens: depth === "low" ? 500 : depth === "high" ? 1600 : 1000,
       prompt: `${context}
 
 Teach this one sub-lesson now, in markdown. Open with the italic "*The question this answers: ...*" line, teach the concept with a concrete worked example using real values, and close with the bold "**In one sentence:** ..." line.
 
-Aim for 250-350 words — thorough on this ONE concept, but a single sitting's read. Write the lesson itself and nothing else: no preamble, no questions, no closing remarks.`,
+${depth === "low" ? "Aim for 120-180 words." : depth === "high" ? "Aim for 450-600 words." : "Aim for 250-350 words — thorough on this ONE concept, but a single sitting's read."} Write the lesson itself and nothing else: no preamble, no questions, no closing remarks.`,
     });
 
     res.json({
@@ -186,11 +197,13 @@ Aim for 250-350 words — thorough on this ONE concept, but a single sitting's r
  * learner starts reading immediately instead of waiting for both.
  */
 app.post("/api/ai/checks", async (req, res) => {
-  const { moduleTitle, sourceExcerpt, notes, subject } = req.body || {};
+  const { moduleTitle, sourceExcerpt, notes, subject, levels } = req.body || {};
+  const challenge = String(levels?.challenge || "medium");
+  const challengeRule = CHALLENGE_RULES[challenge] ?? "";
   try {
     const { data, meta } = await generateJSON<{ questions: any[] }>({
-      system: LESSON_SYSTEM,
-      cacheKey: "lesson-checks",
+      system: challengeRule ? `${LESSON_SYSTEM}\n\n${challengeRule}` : LESSON_SYSTEM,
+      cacheKey: `lesson-checks:${challenge}`,
       maxTokens: 1100,
       prompt: `SUBJECT: ${subject || "the subject"}
 SUB-LESSON: ${moduleTitle}
@@ -324,11 +337,60 @@ function socraticFallback(
 }
 
 // ---------------------------------------------------------------------------
+// 3d. The coach — a second, larger Gemma reads the learner's tracked
+//     behaviour and says what it actually shows. Aggregates are computed
+//     client-side from the answer log; the model interprets, it never counts.
+// ---------------------------------------------------------------------------
+app.post("/api/ai/coach", async (req, res) => {
+  const { evidence, levels, subject } = req.body || {};
+
+  try {
+    const { data, meta } = await generateJSON({
+      system: COACH_SYSTEM,
+      expert: true,
+      cacheKey: "coach",
+      maxTokens: 1400,
+      prompt: `Read this learner's measured data and report back to them directly ("you", not "the learner").
+
+SUBJECT THEY ARE STUDYING: ${subject || "their course"}
+CURRENT SETTINGS: depth=${levels?.depth}, pace=${levels?.pace}, challenge=${levels?.challenge}
+
+MEASURED DATA:
+${JSON.stringify(evidence ?? {}, null, 2).slice(0, 3000)}
+
+Return JSON:
+{
+  "read": "2-3 sentences: the honest, warm summary of how they are actually learning, citing at least one number",
+  "observations": ["up to 3 one-sentence observations, each citing its evidence"],
+  "weakPoints": [{ "topic": "topic name from the data", "evidence": "the numbers", "suggestion": "one concrete action" }],
+  "suggestedLevels": { "depth": "low|medium|high", "pace": "low|medium|high", "challenge": "low|medium|high" },
+  "nextBestAction": "the single most valuable 10 minutes they could spend right now"
+}
+
+Only name weakPoints that appear in the measured data. If there is little data, say so plainly and keep every array short.`,
+    });
+    res.json({ ...data, _gemma: meta });
+  } catch (error: any) {
+    console.error("[coach]", error?.message || error);
+    res.json({
+      read: "The coach could not reach Gemma just now — the numbers below are computed locally and are still accurate.",
+      observations: [],
+      weakPoints: [],
+      suggestedLevels: {},
+      nextBestAction: "Run one five-question drill — every answer sharpens this picture.",
+      _offline: true,
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // 3c. Drills — retrieval practice on demand, for the learner who does not want
 //     a lesson today, just to be tested. Also powers the whole-course review.
 // ---------------------------------------------------------------------------
 app.post("/api/ai/drill", async (req, res) => {
-  const { subject, notes, topics, count, scope } = req.body || {};
+  const { subject, notes, topics, count, scope, levels } = req.body || {};
+  const challenge = String(levels?.challenge || "medium");
+  const challengeRule = CHALLENGE_RULES[challenge] ?? "";
   const howMany = Math.min(10, Math.max(3, Number(count) || 5));
   const wholeCourse = scope === "course";
 
@@ -338,8 +400,8 @@ app.post("/api/ai/drill", async (req, res) => {
 
   try {
     const { data, meta } = await generateJSON({
-      system: `${DRILL_SYSTEM}`,
-      cacheKey: `drill:${scope}:${howMany}`,
+      system: challengeRule ? `${DRILL_SYSTEM}\n\n${challengeRule}` : DRILL_SYSTEM,
+      cacheKey: `drill:${scope}:${howMany}:${challenge}`,
       maxTokens: 1400,
       prompt: `Write ${howMany} retrieval-practice questions for a student revising ${subject || "this subject"}.
 

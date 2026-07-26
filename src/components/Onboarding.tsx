@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { motion } from "motion/react";
 import { AvatarSprite, ItemSprite } from "./PixelSprite";
 import { AVATAR_COUNT, EGG_FOR_SPECIES, SPECIES_LIST, type PetSpecies } from "../lib/sprites";
@@ -13,7 +13,42 @@ export interface OnboardingResult {
   examDate: string;
   notes: string;
   minutesPerDay: number;
+  /** From the calibration step; null when skipped. */
+  calibration: {
+    answers: Array<{ correct: boolean; seconds: number }>;
+    depthPref: "low" | "medium" | "high";
+  } | null;
 }
+
+/**
+ * Three fixed, timed questions — deliberately not generated. The point is a
+ * clean speed/care reading on identical items for everyone, before any course
+ * material exists. Depth is asked outright afterwards, because a preference
+ * you can state should never have to be inferred.
+ */
+const CALIBRATION_BANK = [
+  {
+    question: "All Zorns are Mips. No Mip can fly. Can a Zorn fly?",
+    options: ["Yes", "No", "Can't tell from this"],
+    correctIndex: 1,
+  },
+  {
+    question: "A pen and a cap cost £1.10 together. The pen costs £1 more than the cap. What does the cap cost?",
+    options: ["5p", "10p", "15p"],
+    correctIndex: 0,
+  },
+  {
+    question: "A mark of 42/60 is the same as:",
+    options: ["60%", "65%", "70%"],
+    correctIndex: 2,
+  },
+];
+
+const DEPTH_CHOICES = [
+  { level: "low" as const, label: "Just the essentials", sub: "Fast, tight explanations" },
+  { level: "medium" as const, label: "A balanced walkthrough", sub: "The standard depth" },
+  { level: "high" as const, label: "Everything", sub: "Mechanisms, edge cases, exam traps" },
+];
 
 const SAMPLE_NOTES = `Spaced repetition works because of the forgetting curve. Ebbinghaus showed memory decays exponentially: without review you retain roughly 40% after one day and 25% after six days.
 
@@ -37,7 +72,39 @@ export const Onboarding: React.FC<{
   const [files, setFiles] = useState<AttachedFile[]>([]);
   const [minutesPerDay, setMinutesPerDay] = useState(20);
 
+  // Calibration state
+  const [calIndex, setCalIndex] = useState(0);
+  const [calPicked, setCalPicked] = useState<number | null>(null);
+  const [calAnswers, setCalAnswers] = useState<Array<{ correct: boolean; seconds: number }>>([]);
+  const calShownAt = useRef(Date.now());
+
   const canFinish = subject.trim().length > 1 && notes.trim().length > 40;
+
+  function finish(calibration: OnboardingResult["calibration"]) {
+    onComplete({
+      character,
+      species,
+      petName: petName.trim() || "Biscuit",
+      subject: subject.trim(),
+      examDate,
+      notes: notes.trim(),
+      minutesPerDay,
+      calibration,
+    });
+  }
+
+  function answerCalibration(i: number) {
+    if (calPicked !== null) return;
+    setCalPicked(i);
+    const seconds = Math.round((Date.now() - calShownAt.current) / 1000);
+    const correct = i === CALIBRATION_BANK[calIndex].correctIndex;
+    setCalAnswers((a) => [...a, { correct, seconds }]);
+    setTimeout(() => {
+      setCalPicked(null);
+      setCalIndex((n) => n + 1);
+      calShownAt.current = Date.now();
+    }, 700);
+  }
 
   return (
     <div className="min-h-screen bg-[#FDFCF8] px-4 py-10 text-[#2D362E]">
@@ -180,28 +247,13 @@ export const Onboarding: React.FC<{
 
               <button
                 disabled={!canFinish || busy}
-                onClick={() =>
-                  onComplete({
-                    character,
-                    species,
-                    petName: petName.trim() || "Biscuit",
-                    subject: subject.trim(),
-                    examDate,
-                    notes: notes.trim(),
-                    minutesPerDay,
-                  })
-                }
+                onClick={() => {
+                  setStep(3);
+                  calShownAt.current = Date.now();
+                }}
                 className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5E7161] py-3.5 text-sm font-bold text-white shadow-sm transition-all hover:bg-[#4E5F51] disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {busy ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Gemma 4 is planning your course…
-                  </>
-                ) : (
-                  <>
-                    Build my study plan <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
+                Next: one minute about how you learn <ArrowRight className="h-4 w-4" />
               </button>
               {!canFinish && (
                 <p className="mt-2 text-center text-[11px] text-[#7A837C]">
@@ -210,10 +262,83 @@ export const Onboarding: React.FC<{
               )}
             </Section>
           )}
+
+          {step === 3 && (
+            <Section
+              title="One minute about how you learn"
+              subtitle="Three quick questions to read your speed, then one about depth. This tunes how deeply Gemma teaches and how hard the questions push — you can change it any time."
+            >
+              {busy ? (
+                <div className="py-8 text-center">
+                  <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-[#5E7161]" />
+                  <p className="text-sm font-bold">Gemma 4 is planning your course…</p>
+                </div>
+              ) : calIndex < CALIBRATION_BANK.length ? (
+                <div>
+                  <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#7A837C]">
+                    {calIndex + 1} of {CALIBRATION_BANK.length} · answer at your natural speed
+                  </div>
+                  <h3 className="mb-3 font-serif text-lg font-bold leading-snug">
+                    {CALIBRATION_BANK[calIndex].question}
+                  </h3>
+                  <div className="space-y-2">
+                    {CALIBRATION_BANK[calIndex].options.map((opt, i) => {
+                      const isRight = i === CALIBRATION_BANK[calIndex].correctIndex;
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => answerCalibration(i)}
+                          disabled={calPicked !== null}
+                          className={`w-full rounded-2xl border p-3 text-left text-sm transition-all ${
+                            calPicked === null
+                              ? "border-[#E5E2D9] bg-[#FDFCF8] hover:border-[#8BA88E]"
+                              : isRight
+                              ? "border-[#5E7161] bg-[#F0F4F0]"
+                              : calPicked === i
+                              ? "border-[#E8C5B0] bg-[#FFF5F5]"
+                              : "border-[#E5E2D9] opacity-60"
+                          }`}
+                        >
+                          {opt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    onClick={() => finish(null)}
+                    className="mt-4 text-[11px] font-bold text-[#7A837C] underline underline-offset-2"
+                  >
+                    Skip — use balanced defaults
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <h3 className="mb-1 font-serif text-lg font-bold">
+                    Last one: when something new is explained, you want…
+                  </h3>
+                  <div className="mt-3 space-y-2">
+                    {DEPTH_CHOICES.map((c) => (
+                      <button
+                        key={c.level}
+                        onClick={() => finish({ answers: calAnswers, depthPref: c.level })}
+                        className="flex w-full items-center justify-between rounded-2xl border border-[#E5E2D9] bg-[#FDFCF8] p-3.5 text-left transition-all hover:border-[#5E7161] hover:bg-[#F0F4F0]"
+                      >
+                        <div>
+                          <div className="text-sm font-bold">{c.label}</div>
+                          <div className="text-[11px] text-[#7A837C]">{c.sub}</div>
+                        </div>
+                        <ArrowRight className="h-4 w-4 shrink-0 text-[#5E7161]" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Section>
+          )}
         </div>
 
         <div className="mt-4 flex justify-center gap-2">
-          {[0, 1, 2].map((i) => (
+          {[0, 1, 2, 3].map((i) => (
             <button
               key={i}
               onClick={() => setStep(i)}

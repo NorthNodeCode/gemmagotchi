@@ -120,6 +120,57 @@ export interface StudyLogEntry {
   kind: "lesson" | "sprint" | "rescue" | "drill";
 }
 
+/** One answered question, wherever it was answered. The coach reads these. */
+export interface AnswerLogEntry {
+  id: string;
+  at: number;
+  courseId: string | null;
+  /** The week/topic this question belonged to — what weak points key on. */
+  topic: string;
+  kind: "mcq" | "text";
+  correct: boolean;
+  /** Seconds from seeing the question to resolving it. */
+  seconds: number;
+  context: "lesson" | "drill" | "diagnostic" | "calibration";
+}
+
+export type Level = "low" | "medium" | "high";
+
+export interface LearnerLevels {
+  /** How deep lessons go. */
+  depth: Level;
+  /** How dense the plan is — driven by answer speed. */
+  pace: Level;
+  /** How hard the questions push — driven by accuracy. */
+  challenge: Level;
+}
+
+/**
+ * What the app believes about how this learner learns. `measured` comes from
+ * the calibration test and ongoing behaviour; `overrides` is the learner
+ * disagreeing, and always wins — the model serves the person, not the reverse.
+ */
+export interface LearnerProfile {
+  measured: LearnerLevels;
+  overrides: Partial<LearnerLevels>;
+  medianAnswerSeconds: number | null;
+  calibratedAt: number | null;
+}
+
+export interface CoachWeakPoint {
+  topic: string;
+  evidence: string;
+  suggestion: string;
+}
+
+export interface CoachReport {
+  read: string;
+  observations: string[];
+  weakPoints: CoachWeakPoint[];
+  suggestedLevels: Partial<LearnerLevels>;
+  nextBestAction: string;
+}
+
 export interface ProviderInfo {
   provider: string;
   model: string;

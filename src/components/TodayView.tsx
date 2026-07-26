@@ -18,6 +18,8 @@ interface Props {
   nextModule: SubLesson | null;
   celebrateKey: number;
   studyLog: StudyLogEntry[];
+  /** The coach card, built by App (it owns the logs the coach reads). */
+  coach?: React.ReactNode;
   onStartLesson: () => void;
   onStartSprint: () => void;
   onRescue: () => void;
@@ -41,6 +43,7 @@ export const TodayView: React.FC<Props> = ({
   nextModule,
   celebrateKey,
   studyLog,
+  coach,
   onStartLesson,
   onStartSprint,
   onRescue,
@@ -205,6 +208,8 @@ export const TodayView: React.FC<Props> = ({
             Tutor mode teaches and checks. Sprint mode just keeps you company while you work.
           </p>
         </div>
+
+        {coach}
 
         <div className="grid gap-3 sm:grid-cols-3">
           <Stat label="Total XP" value={String(pet.xp)} item={ITEM.diamond} />

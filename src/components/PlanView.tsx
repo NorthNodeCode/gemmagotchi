@@ -19,10 +19,13 @@ import type { Course, SubLesson } from "../types";
  */
 export const PlanView: React.FC<{
   course: Course | null;
+  /** Topic title -> accuracy percent, for topics with enough misses to matter. */
+  weakByTopic: Record<string, number>;
   onStart: (module: SubLesson) => void;
+  onDrillTopic: (topicTitle: string) => void;
   onAddTopic: () => void;
   onBigReview: () => void;
-}> = ({ course, onStart, onAddTopic, onBigReview }) => {
+}> = ({ course, weakByTopic, onStart, onDrillTopic, onAddTopic, onBigReview }) => {
   const current = currentTopic(course);
   const [open, setOpen] = useState<string | null>(current?.id ?? null);
 
@@ -103,6 +106,18 @@ export const PlanView: React.FC<{
                     )}
                   </div>
                   <div className="mt-1.5 flex items-center gap-2">
+                    {weakByTopic[topic.title] != null && (
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDrillTopic(topic.title);
+                        }}
+                        title="Your accuracy here is low — one click to drill it"
+                        className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-[#E8C5B0] bg-[#FFF5F5] px-2 py-0.5 text-[10px] font-bold text-[#B85B56] hover:bg-[#FDEAEA]"
+                      >
+                        {weakByTopic[topic.title]}% — drill this
+                      </span>
+                    )}
                     <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#E5E2D9]">
                       <div
                         className="h-full rounded-full bg-[#8BA88E]"

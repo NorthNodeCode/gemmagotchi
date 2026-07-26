@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import confetti from "canvas-confetti";
 import { ArrowRight, Layers, Loader2, RotateCcw, Target, Zap } from "lucide-react";
@@ -6,6 +6,7 @@ import { QuestionCard } from "./TutorRoom";
 import { ItemSprite } from "./PixelSprite";
 import { ITEM } from "../lib/sprites";
 import { allModules, allNotes, orderedTopics, topicOf } from "../lib/course";
+import { currentLevels } from "../lib/learnerModel";
 import type { CheckQuestion, Course, SubLesson } from "../types";
 
 /**
@@ -22,15 +23,22 @@ type Scope = { kind: "module"; module: SubLesson } | { kind: "course" };
 
 interface Props {
   course: Course | null;
+  /** When set, start immediately on this topic title (from a weak-point chip). */
+  autoStartTopic?: string | null;
+  onAutoStarted?: () => void;
   hasMasterclass: boolean;
   onCorrect: (weight: number) => void;
+  onAnswered: (outcome: { topic: string; kind: "mcq" | "text"; correct: boolean; seconds: number; context: "drill" | "diagnostic" }) => void;
   onDrillComplete: (label: string, score: number, total: number) => void;
 }
 
 export const DrillsView: React.FC<Props> = ({
   course,
+  autoStartTopic,
+  onAutoStarted,
   hasMasterclass,
   onCorrect,
+  onAnswered,
   onDrillComplete,
 }) => {
   const [phase, setPhase] = useState<Phase>("setup");
@@ -39,6 +47,16 @@ export const DrillsView: React.FC<Props> = ({
   const [score, setScore] = useState(0);
   const [count, setCount] = useState(5);
   const [label, setLabel] = useState("");
+  const [answerTopic, setAnswerTopic] = useState("");
+
+  /** A weak-point chip queued a topic — begin without another click. */
+  useEffect(() => {
+    if (!autoStartTopic || !course || phase !== "setup") return;
+    const topic = orderedTopics(course).find((t) => t.title === autoStartTopic);
+    const module = topic?.modules[0] ?? allModules(course)[0];
+    onAutoStarted?.();
+    if (module) start({ kind: "module", module });
+  }, [autoStartTopic, course]);
 
   async function start(scope: Scope) {
     if (!course) return;
@@ -47,6 +65,11 @@ export const DrillsView: React.FC<Props> = ({
 
     setPhase("loading");
     setLabel(title);
+    setAnswerTopic(
+      scope.kind === "course"
+        ? `${course.subject} (review)`
+        : topicOf(course, scope.module.id)?.title ?? scope.module.title
+    );
     setQuestions([]);
     setIndex(0);
     setScore(0);
@@ -66,6 +89,7 @@ export const DrillsView: React.FC<Props> = ({
           subject: course.subject,
           notes,
           count,
+          levels: currentLevels(),
           scope: scope.kind === "course" ? "course" : "module",
           topics:
             scope.kind === "course"
@@ -186,6 +210,9 @@ export const DrillsView: React.FC<Props> = ({
               total={questions.length}
               subject={course.subject}
               hasMasterclass={hasMasterclass}
+              onAnswered={({ question, correct, seconds }) =>
+                onAnswered({ topic: answerTopic, kind: question.kind, correct, seconds, context: "drill" })
+              }
               onResolved={resolved}
               onNext={next}
             />

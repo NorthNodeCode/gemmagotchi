@@ -23,6 +23,14 @@ import path from "path";
 /** Hosted Gemma 4 on the Gemini API (MoE, ~4B active params, 256K context). */
 export const GEMMA_MODEL_HOSTED = "gemma-4-26b-a4b-it";
 
+/**
+ * The coach runs on a second, larger Gemma when a key is available: the
+ * dense 31B model, reserved for reading the learner rather than teaching
+ * them. Analysis over a whole behaviour log rewards the bigger model in a
+ * way that "teach one concept" does not.
+ */
+export const GEMMA_MODEL_EXPERT = "gemma-4-31b-it";
+
 /** Local Gemma 4 via Ollama (effective-4B edge model, runs on a laptop). */
 export const GEMMA_MODEL_LOCAL = "gemma4:e4b";
 
@@ -50,6 +58,8 @@ export interface GenerateOptions {
   /** Cache key namespace, so identical prompts in different features differ. */
   cacheKey?: string;
   maxTokens?: number;
+  /** Use the larger expert Gemma on the hosted path (local is unchanged). */
+  expert?: boolean;
 }
 
 export interface GenerateResult {
@@ -222,7 +232,7 @@ async function generateHosted(opts: GenerateOptions): Promise<string> {
   for (let attempt = 0; attempt <= BACKOFF_MS.length; attempt++) {
     try {
       const response = await ai.models.generateContent({
-        model: GEMMA_MODEL_HOSTED,
+        model: opts.expert ? GEMMA_MODEL_EXPERT : GEMMA_MODEL_HOSTED,
         contents: opts.prompt,
         config,
       });
@@ -272,6 +282,13 @@ export async function generate(opts: GenerateOptions): Promise<GenerateResult> {
     if (hostedReady) order.push("hosted");
   }
 
+  // Expert work inverts the local-first preference: the whole point is the
+  // larger hosted model, so when a key exists it goes first and the laptop
+  // model remains the fallback rather than the default.
+  if (opts.expert && hostedReady && order[0] !== "hosted") {
+    order.sort((a) => (a === "hosted" ? -1 : 1));
+  }
+
   if (order.length === 0) {
     throw new Error(
       "No Gemma 4 provider available: set GEMINI_API_KEY, or run `ollama pull gemma4:e4b`."
@@ -283,7 +300,12 @@ export async function generate(opts: GenerateOptions): Promise<GenerateResult> {
     try {
       const text =
         provider === "local" ? await generateLocal(opts) : await generateHosted(opts);
-      const model = provider === "local" ? GEMMA_MODEL_LOCAL : GEMMA_MODEL_HOSTED;
+      const model =
+        provider === "local"
+          ? GEMMA_MODEL_LOCAL
+          : opts.expert
+          ? GEMMA_MODEL_EXPERT
+          : GEMMA_MODEL_HOSTED;
       cache.set(key, { text, provider, model });
       persistCache();
       return { text, provider, model, cached: false, ms: Date.now() - started };

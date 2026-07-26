@@ -25,6 +25,7 @@ interface Props {
   pet: PetState;
   /** Bought in the gem sanctuary — adds "Go deeper" to every check. */
   hasMasterclass: boolean;
+  onAnswered: (outcome: { topic: string; kind: "mcq" | "text"; correct: boolean; seconds: number; context: "lesson" }) => void;
   onCorrect: (weight: number) => void;
   onLessonComplete: (moduleId: string, score: number, total: number) => void;
   onExit: () => void;
@@ -35,6 +36,7 @@ export const TutorRoom: React.FC<Props> = ({
   module,
   pet,
   hasMasterclass,
+  onAnswered,
   onCorrect,
   onLessonComplete,
   onExit,
@@ -193,6 +195,15 @@ export const TutorRoom: React.FC<Props> = ({
                 total={questions.length}
                 subject={course.subject}
                 hasMasterclass={hasMasterclass}
+                onAnswered={({ question, correct, seconds }) =>
+                  onAnswered({
+                    topic: topicOf(course, module.id)?.title ?? module.title,
+                    kind: question.kind,
+                    correct,
+                    seconds,
+                    context: "lesson",
+                  })
+                }
                 onResolved={handleQuestionResolved}
                 onNext={nextQuestion}
               />
@@ -257,12 +268,27 @@ export const QuestionCard: React.FC<{
   subject: string;
   hasMasterclass: boolean;
   onResolved: (correct: boolean) => void;
+  /** Fires once per question with correctness and time-to-answer. */
+  onAnswered?: (outcome: { question: CheckQuestion; correct: boolean; seconds: number }) => void;
   onNext: () => void;
-}> = ({ question, index, total, subject, hasMasterclass, onResolved, onNext }) => {
+}> = ({ question, index, total, subject, hasMasterclass, onResolved, onAnswered, onNext }) => {
   const [selected, setSelected] = useState<number | null>(null);
   const [text, setText] = useState("");
   const [grading, setGrading] = useState(false);
   const [result, setResult] = useState<GradeResult | null>(null);
+  /** When this question appeared — the clock the answer time is measured on. */
+  const shownAt = useRef(Date.now());
+  useEffect(() => {
+    shownAt.current = Date.now();
+  }, [question.id]);
+
+  function reportAnswer(correct: boolean) {
+    onAnswered?.({
+      question,
+      correct,
+      seconds: Math.round((Date.now() - shownAt.current) / 1000),
+    });
+  }
   const [deeper, setDeeper] = useState<string | null>(null);
   const [deepening, setDeepening] = useState(false);
   const revealed = selected !== null || result !== null;
@@ -306,12 +332,14 @@ export const QuestionCard: React.FC<{
     });
     setGrading(false);
     setResult(graded);
+    reportAnswer(graded.verdict === "correct");
     onResolved(graded.verdict === "correct");
   }
 
   function chooseOption(i: number) {
     if (revealed) return;
     setSelected(i);
+    reportAnswer(i === question.correctIndex);
     onResolved(i === question.correctIndex);
   }
 

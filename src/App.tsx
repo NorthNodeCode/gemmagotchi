@@ -28,6 +28,9 @@ import {
   prefetchLesson,
 } from "./services/api";
 import { applyDecay, createPet, feedPet, recordStudy, stageFor, type PetState } from "./lib/petState";
+import { DEFAULT_PROFILE, paceFromSeconds, remeasure, weakTopics } from "./lib/learnerModel";
+import { CoachCard, ProfileModal } from "./components/Coach";
+import { DiagnosticModal, type DiagnosticOutcome } from "./components/DiagnosticModal";
 import {
   allModules,
   allNotes,
@@ -41,8 +44,10 @@ import { GemSanctuary, type Reward } from "./components/GemSanctuary";
 import { advanceDays, now, offsetDays, resetClock } from "./lib/clock";
 import { FOODS } from "./lib/sprites";
 import type {
+  AnswerLogEntry,
   Course,
   Inventory,
+  LearnerProfile,
   Learner,
   Nudge,
   ProviderInfo,
@@ -62,6 +67,8 @@ const KEYS = {
   inventory: "gemmagotchi_inventory",
   minutes: "gemmagotchi_minutes",
   studyLog: "gemmagotchi_studylog",
+  answers: "gemmagotchi_answers",
+  profile: "gemmagotchi_profile",
 };
 
 function load<T>(key: string, fallback: T): T {
@@ -109,6 +116,8 @@ function Gemmagotchi() {
   );
   const [minutesPerDay, setMinutesPerDay] = useState<number>(() => load(KEYS.minutes, 20));
   const [studyLog, setStudyLog] = useState<StudyLogEntry[]>(() => load<StudyLogEntry[]>(KEYS.studyLog, []));
+  const [answers, setAnswers] = useState<AnswerLogEntry[]>(() => load<AnswerLogEntry[]>(KEYS.answers, []));
+  const [profile, setProfile] = useState<LearnerProfile>(() => load<LearnerProfile>(KEYS.profile, DEFAULT_PROFILE));
 
   const [tab, setTab] = useState<Tab>("today");
   const [activeModule, setActiveModule] = useState<SubLesson | null>(null);
@@ -124,6 +133,15 @@ function Gemmagotchi() {
   const [celebrate, setCelebrate] = useState(0);
 
   const [addTopicOpen, setAddTopicOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [drillTopic, setDrillTopic] = useState<string | null>(null);
+  /** A course request paused for its diagnostic quiz. */
+  const [pendingPlan, setPendingPlan] = useState<{
+    subject: string;
+    examDate: string;
+    notes: string;
+    files?: string[];
+  } | null>(null);
   const [socraticOpen, setSocraticOpen] = useState(false);
   const [gemsOpen, setGemsOpen] = useState(false);
 
@@ -142,6 +160,8 @@ function Gemmagotchi() {
   useEffect(() => { localStorage.setItem(KEYS.inventory, JSON.stringify(inventory)); }, [inventory]);
   useEffect(() => { localStorage.setItem(KEYS.minutes, JSON.stringify(minutesPerDay)); }, [minutesPerDay]);
   useEffect(() => { localStorage.setItem(KEYS.studyLog, JSON.stringify(studyLog)); }, [studyLog]);
+  useEffect(() => { localStorage.setItem(KEYS.answers, JSON.stringify(answers)); }, [answers]);
+  useEffect(() => { localStorage.setItem(KEYS.profile, JSON.stringify(profile)); }, [profile]);
 
   useEffect(() => {
     fetchProvider().then(setProvider);
@@ -208,12 +228,13 @@ function Gemmagotchi() {
    * it means each week's plan is about that week rather than a blur.
    */
   const planTopicPlan = useCallback(
-    async (input: { subject: string; examDate?: string; notes: string }) => {
+    async (input: { subject: string; examDate?: string; notes: string; baseline?: string }) => {
       return buildCurriculum({
         notes: input.notes,
         subject: input.subject,
         examDate: input.examDate ?? "",
         minutesPerDay,
+        baseline: input.baseline,
       });
     },
     [minutesPerDay]
@@ -228,12 +249,14 @@ function Gemmagotchi() {
       files?: string[];
       topicTitle?: string;
       minutesPerDay?: number;
+      baseline?: string;
     }) => {
       const t = now();
       const plan = await planTopicPlan({
         subject: req.subject,
         examDate: req.examDate,
         notes: req.notes,
+        baseline: req.baseline,
       });
       const created: Course = {
         id: `course-${t}`,
@@ -260,14 +283,8 @@ function Gemmagotchi() {
     [planTopicPlan]
   );
 
-  async function addCourse(req: { subject: string; examDate: string; notes: string; files?: string[] }) {
-    setBuilding(true);
-    try {
-      await planCourse(req);
-      setTab("plan");
-    } finally {
-      setBuilding(false);
-    }
+  function addCourse(req: { subject: string; examDate: string; notes: string; files?: string[] }) {
+    setPendingPlan(req);
   }
 
   /**
@@ -354,18 +371,46 @@ function Gemmagotchi() {
     };
   }, [pet?.health, pet?.streak, pet?.stage, course?.id, nextModule?.id, clockDays]);
 
-  async function handleOnboarding(result: OnboardingResult) {
+  function handleOnboarding(result: OnboardingResult) {
+    setLearner({ character: result.character, name: "You" });
+    setPet(createPet(result.petName, result.species, now()));
+    setMinutesPerDay(result.minutesPerDay);
+
+    // Calibration read: depth is stated, pace is measured, both visible later.
+    if (result.calibration) {
+      const times = result.calibration.answers.map((a) => a.seconds).sort((x, y) => x - y);
+      const median = times.length ? times[Math.floor(times.length / 2)] : null;
+      setProfile((p) => ({
+        ...p,
+        calibratedAt: now(),
+        medianAnswerSeconds: median,
+        measured: {
+          ...p.measured,
+          depth: result.calibration!.depthPref,
+          pace: paceFromSeconds(median),
+        },
+      }));
+      for (const a of result.calibration.answers) {
+        recordAnswer({ topic: "Calibration", kind: "mcq", ...a, context: "calibration" });
+      }
+    }
+
+    // The diagnostic runs BEFORE planning, so the plan is built around it.
+    setPendingPlan({ subject: result.subject, examDate: result.examDate, notes: result.notes });
+  }
+
+  /** Diagnostic finished (or skipped) — now actually build the plan. */
+  async function handleDiagnosticDone(outcome: DiagnosticOutcome) {
+    const req = pendingPlan;
+    setPendingPlan(null);
+    if (!req) return;
+    for (const a of outcome.answers) {
+      recordAnswer({ topic: req.subject, kind: a.kind, correct: a.correct, seconds: a.seconds, context: "diagnostic" });
+    }
     setBuilding(true);
     try {
-      await planCourse({
-        subject: result.subject,
-        examDate: result.examDate,
-        notes: result.notes,
-        minutesPerDay: result.minutesPerDay,
-      });
-      setLearner({ character: result.character, name: "You" });
-      setPet(createPet(result.petName, result.species, now()));
-      setMinutesPerDay(result.minutesPerDay);
+      await planCourse({ ...req, baseline: outcome.baseline ?? undefined });
+      setTab("plan");
     } finally {
       setBuilding(false);
     }
@@ -384,6 +429,36 @@ function Gemmagotchi() {
       ]);
     },
     []
+  );
+
+  /**
+   * Record one answered question and re-measure the profile from the log.
+   * Overrides are untouched: re-measuring only moves what the learner has not
+   * pinned by hand.
+   */
+  const recordAnswer = useCallback(
+    (outcome: {
+      topic: string;
+      kind: "mcq" | "text";
+      correct: boolean;
+      seconds: number;
+      context: AnswerLogEntry["context"];
+    }) => {
+      // Computed outside the updaters: a nested setState inside one is the
+      // impurity that paid every reward twice before it was caught.
+      const next: AnswerLogEntry[] = [
+        ...answers,
+        {
+          ...outcome,
+          id: `ans-${Date.now()}-${answers.length}`,
+          at: now(),
+          courseId: activeCourseId,
+        },
+      ];
+      setAnswers(next);
+      setProfile((p) => remeasure(p, next));
+    },
+    [answers, activeCourseId]
   );
 
   /**
@@ -523,7 +598,7 @@ function Gemmagotchi() {
     setCelebrate((c) => c + 1);
   }
 
-  if (!learner || !pet || !course) {
+  if (!learner || !pet) {
     return <Onboarding busy={building} onComplete={handleOnboarding} />;
   }
 
@@ -561,6 +636,7 @@ function Gemmagotchi() {
             module={activeModule}
             pet={pet}
             hasMasterclass={inventory.owned.includes("masterclass")}
+            onAnswered={recordAnswer}
             onCorrect={handleCorrect}
             onLessonComplete={handleLessonComplete}
             onExit={() => setActiveModule(null)}
@@ -576,6 +652,19 @@ function Gemmagotchi() {
                 nextModule={nextModule}
                 celebrateKey={celebrate}
                 studyLog={studyLog}
+                coach={
+                  <CoachCard
+                    answers={answers}
+                    studyLog={studyLog}
+                    profile={profile}
+                    subject={course?.subject}
+                    onOpenProfile={() => setProfileOpen(true)}
+                    onDrillTopic={(t) => {
+                      setDrillTopic(t);
+                      setTab("drills");
+                    }}
+                  />
+                }
                 onOpenTrajectory={() => setTab("trajectory")}
                 onStartLesson={() => nextModule && setActiveModule(nextModule)}
                 onStartSprint={openTimer}
@@ -597,6 +686,13 @@ function Gemmagotchi() {
             {tab === "plan" && (
               <PlanView
                 course={course}
+                weakByTopic={Object.fromEntries(
+                  weakTopics(answers).map((w) => [w.topic, Math.round(w.accuracy * 100)])
+                )}
+                onDrillTopic={(t) => {
+                  setDrillTopic(t);
+                  setTab("drills");
+                }}
                 onStart={setActiveModule}
                 onAddTopic={() => setAddTopicOpen(true)}
                 onBigReview={() => setTab("drills")}
@@ -605,8 +701,11 @@ function Gemmagotchi() {
             {tab === "drills" && (
               <DrillsView
                 course={course}
+                autoStartTopic={drillTopic}
+                onAutoStarted={() => setDrillTopic(null)}
                 hasMasterclass={inventory.owned.includes("masterclass")}
                 onCorrect={handleCorrect}
+                onAnswered={recordAnswer}
                 onDrillComplete={(label, score, total) =>
                   logStudy({
                     label: `Drill: ${label}`,
@@ -653,6 +752,18 @@ function Gemmagotchi() {
             setTimer(null);
           }}
         />
+      )}
+
+      {pendingPlan && (
+        <DiagnosticModal
+          subject={pendingPlan.subject}
+          notes={pendingPlan.notes}
+          onDone={handleDiagnosticDone}
+        />
+      )}
+
+      {profileOpen && (
+        <ProfileModal profile={profile} onChange={setProfile} onClose={() => setProfileOpen(false)} />
       )}
 
       {addTopicOpen && course && (
