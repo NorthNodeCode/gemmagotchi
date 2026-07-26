@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { AnimalSprite, ItemSprite, PixelSprite } from "./PixelSprite";
-import { EGG_FOR_SPECIES, FACING_VIEWER, SPECIES, sleepRowFor } from "../lib/sprites";
+import { EGG_FOR_SPECIES, FACING_AWAY, FACING_LEFT, FACING_RIGHT, FACING_VIEWER, SPECIES, sleepRowFor } from "../lib/sprites";
 import { growthProgress, moodFor, type PetMood, type PetState } from "../lib/petState";
 
 const MOOD_COPY: Record<PetMood, string> = {
@@ -58,6 +58,8 @@ interface Pose {
   x: number;
   y: number;
   angle: number;
+  /** Which way the pet faces: a row of the animal sheet. */
+  facing: number;
 }
 
 const POSE_KEY = "gemmagotchi_petpose";
@@ -65,9 +67,9 @@ const POSE_KEY = "gemmagotchi_petpose";
 function loadPose(petId: string): Pose {
   try {
     const all = JSON.parse(localStorage.getItem(POSE_KEY) || "{}");
-    return { x: 0, y: 0, angle: 0, ...(all[petId] ?? {}) };
+    return { x: 0, y: 0, angle: 0, facing: FACING_VIEWER, ...(all[petId] ?? {}) };
   } catch {
-    return { x: 0, y: 0, angle: 0 };
+    return { x: 0, y: 0, angle: 0, facing: FACING_VIEWER };
   }
 }
 
@@ -101,6 +103,17 @@ export const PetCompanion: React.FC<Props> = ({
   function updatePose(next: Pose) {
     setPose(next);
     savePose(petId, next);
+  }
+
+  /** Click turns the pet on the spot: front → right → back → left. */
+  const TURN_ORDER = [FACING_VIEWER, FACING_RIGHT, FACING_AWAY, FACING_LEFT];
+  const wasDragging = useRef(false);
+
+  function handlePetClick() {
+    if (onClick) return onClick();
+    if (wasDragging.current || pet.stage === "egg") return;
+    const at = TURN_ORDER.indexOf(pose.facing);
+    updatePose({ ...pose, facing: TURN_ORDER[(at + 1) % TURN_ORDER.length] });
   }
 
   useEffect(() => {
@@ -149,22 +162,35 @@ export const PetCompanion: React.FC<Props> = ({
           }
           animate={{ x: pose.x, y: pose.y, rotate: pose.angle }}
           transition={{ type: "spring", stiffness: 500, damping: 40 }}
-          onDragEnd={(_e, info) =>
-            updatePose({ ...pose, x: pose.x + info.offset.x, y: pose.y + info.offset.y })
-          }
+          onDragStart={() => {
+            wasDragging.current = true;
+          }}
+          onDragEnd={(_e, info) => {
+            updatePose({ ...pose, x: pose.x + info.offset.x, y: pose.y + info.offset.y });
+            // The click event lands right after drag release; let it pass first.
+            setTimeout(() => {
+              wasDragging.current = false;
+            }, 80);
+          }}
           onWheel={
             interactive
               ? (e) => updatePose({ ...pose, angle: pose.angle + (e.deltaY > 0 ? 15 : -15) })
               : undefined
           }
-          onDoubleClick={interactive ? () => updatePose({ x: 0, y: 0, angle: 0 }) : undefined}
-          title={interactive ? "Drag to move · scroll to spin · double-click to reset" : undefined}
+          onDoubleClick={
+            interactive ? () => updatePose({ x: 0, y: 0, angle: 0, facing: FACING_VIEWER }) : undefined
+          }
+          title={
+            interactive
+              ? "Click to turn · drag to move · scroll to spin · double-click to reset"
+              : undefined
+          }
           className={interactive ? "cursor-grab active:cursor-grabbing" : undefined}
           style={{ touchAction: interactive ? "none" : undefined }}
         >
           <motion.button
             type="button"
-            onClick={onClick}
+            onClick={handlePetClick}
             animate={
               pop
                 ? { scale: [1, 1.25, 1], y: [0, -14, 0], opacity: 1, filter: "saturate(1.2)" }
@@ -184,7 +210,7 @@ export const PetCompanion: React.FC<Props> = ({
               <AnimalSprite
                 species={pet.species}
                 stage={pet.stage === "adult" ? "adult" : "baby"}
-                row={asleep ? sleepRowFor(pet.species) : FACING_VIEWER}
+                row={asleep ? sleepRowFor(pet.species) : pose.facing}
                 size={size}
                 fps={look.fps}
               />

@@ -5,8 +5,7 @@ import { AnimalSprite, ItemSprite } from "./PixelSprite";
 import { EGG_FOR_SPECIES, ITEM } from "../lib/sprites";
 import { daysBetween, GRACE_DAYS } from "../lib/petState";
 import { now } from "../lib/clock";
-import { Play, LifeBuoy, Loader2, Sparkles, Timer, Clock, Droplets, Flame, Heart, TrendingUp } from "lucide-react";
-import { moodFor } from "../lib/petState";
+import { Play, LifeBuoy, Loader2, Sparkles, Timer, Clock, Droplets, Flame, TrendingUp } from "lucide-react";
 import { courseProgress } from "../lib/course";
 import type { Course, Nudge, PetState, StudyLogEntry, SubLesson } from "../types";
 
@@ -67,14 +66,12 @@ export const TodayView: React.FC<Props> = ({
 
   const totalMins = studyLog.reduce((sum, e) => sum + (e.durationMins ?? 0), 0);
   const sessions = studyLog.length;
-  const mood = moodFor(pet.health);
-  const flagging = mood === "sleepy" || mood === "hungry";
 
   return (
     <div className="space-y-5">
       {/* What the learner has actually done, so the effort is visible even on
           a day they have not started yet. */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <Metric
           icon={Clock}
           label="Total focus time"
@@ -88,20 +85,6 @@ export const TodayView: React.FC<Props> = ({
           value={String(pet.streak)}
           sub={pet.streak === 0 ? "starts with one lesson" : "keep it going"}
           tint="text-[#D97706]"
-        />
-        <Metric
-          icon={Heart}
-          label={`${pet.name}'s vitality`}
-          value={`${Math.round(pet.health)}%`}
-          sub={
-            pet.stage === "egg"
-              ? "still an egg"
-              : pet.stage === "baby"
-              ? "young"
-              : "fully grown"
-          }
-          tint={flagging ? "text-[#B85B56]" : "text-[#5E7161]"}
-          alert={flagging}
         />
         <Metric
           icon={Sparkles}
@@ -182,7 +165,11 @@ export const TodayView: React.FC<Props> = ({
                 {course?.subject ?? "No course yet"}
               </span>
               <h2 className="mt-0.5 font-serif text-2xl font-bold">
-                {nextModule ? nextModule.title : "You've finished the plan"}
+                {nextModule
+                  ? nextModule.title
+                  : course
+                  ? "You've finished the plan"
+                  : "Your first course is on its way"}
               </h2>
               {nextModule?.description && (
                 <p className="mt-1.5 text-sm text-[#7A837C]">{nextModule.description}</p>
@@ -215,11 +202,12 @@ export const TodayView: React.FC<Props> = ({
 
           <div className="flex flex-col gap-2.5 sm:flex-row">
             <button
+              disabled={!course}
               onClick={nextModule ? onStartLesson : onOpenPlan}
-              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#5E7161] py-3.5 text-sm font-bold text-white transition-all hover:bg-[#4E5F51]"
+              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#5E7161] py-3.5 text-sm font-bold text-white transition-all hover:bg-[#4E5F51] disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Play className="h-4 w-4 fill-current" />
-              {nextModule ? "Start this sub-lesson" : "Review the plan"}
+              {nextModule ? "Start this sub-lesson" : course ? "Review the plan" : "Planning…"}
             </button>
             <button
               onClick={onStartSprint}

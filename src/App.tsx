@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { Header, type Tab } from "./components/Header";
 import { Onboarding, type OnboardingResult } from "./components/Onboarding";
@@ -733,6 +734,13 @@ function Gemmagotchi() {
       />
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+        {building && (
+          <div className="mb-4 flex items-center gap-2.5 rounded-2xl border border-[#8BA88E]/40 bg-[#F0F4F0] px-4 py-3 text-sm font-bold text-[#5E7161]">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Gemma 4 is planning your course from your material — about a minute on-device. Feel
+            free to look around; it will appear in Study plan.
+          </div>
+        )}
         {activeModule ? (
           <TutorRoom
             course={course}
@@ -782,7 +790,7 @@ function Gemmagotchi() {
             {tab === "courses" && (
               <CoursesView
                 courses={courses}
-                activeCourseId={course.id}
+                activeCourseId={course?.id ?? null}
                 busy={building}
                 onSetActive={setActiveCourseId}
                 onDelete={deleteCourse}
