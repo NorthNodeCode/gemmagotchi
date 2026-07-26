@@ -11,9 +11,15 @@ import { RescueModal } from "./components/RescueModal";
 import { DevSprites } from "./components/DevSprites";
 import { CoursesView } from "./components/CoursesView";
 import { SocraticModal } from "./components/SocraticModal";
-import { SprintRoom } from "./components/SprintRoom";
 import { DrillsView } from "./components/DrillsView";
 import { AddTopicModal, type TopicDraft } from "./components/AddTopicModal";
+import {
+  BREAK_MINUTES,
+  FocusTimer,
+  TimerPill,
+  initialTimer,
+  type TimerState,
+} from "./components/FocusTimer";
 import {
   buildCurriculum,
   fetchNudge,
@@ -106,7 +112,8 @@ function Gemmagotchi() {
 
   const [tab, setTab] = useState<Tab>("today");
   const [activeModule, setActiveModule] = useState<SubLesson | null>(null);
-  const [sprinting, setSprinting] = useState(false);
+  const [timer, setTimer] = useState<TimerState | null>(null);
+  const [timerOpen, setTimerOpen] = useState(false);
   const [building, setBuilding] = useState(false);
   const [planProgress, setPlanProgress] = useState<{ current: number; total: number; title: string } | null>(null);
   const [provider, setProvider] = useState<ProviderInfo | null>(null);
@@ -151,6 +158,37 @@ function Gemmagotchi() {
   useEffect(() => {
     settlePet();
   }, [settlePet, clockDays]);
+
+  /**
+   * The focus timer ticks in the app, not in its window, so closing the window
+   * or changing tab does not throw the session away — the one thing a focus
+   * timer must never do.
+   */
+  useEffect(() => {
+    if (!timer?.running) return;
+    const id = setInterval(() => {
+      setTimer((t) => (t && t.secondsLeft > 0 ? { ...t, secondsLeft: t.secondsLeft - 1 } : t));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [timer?.running]);
+
+  // A finished round pays out, then rolls into a break (or back to work).
+  useEffect(() => {
+    if (!timer || timer.secondsLeft > 0) return;
+    if (timer.phase === "work") {
+      completeSprint(timer.minutes);
+      setTimer({
+        minutes: timer.minutes,
+        secondsLeft: BREAK_MINUTES * 60,
+        running: true,
+        phase: "break",
+        rounds: timer.rounds + 1,
+      });
+    } else {
+      setTimer({ ...initialTimer(timer.minutes), rounds: timer.rounds });
+      setTimerOpen(true);
+    }
+  }, [timer?.secondsLeft, timer?.phase]);
 
   /** The module today's lesson comes from. Everything downstream reads this. */
   const course = useMemo(
@@ -398,6 +436,12 @@ function Gemmagotchi() {
     }
   }
 
+  /** Open the timer, starting a fresh round if none is in flight. */
+  function openTimer() {
+    setTimer((t) => t ?? initialTimer(minutesPerDay >= 45 ? 45 : minutesPerDay >= 25 ? 25 : 15));
+    setTimerOpen(true);
+  }
+
   function completeRescue() {
     setRescueOpen(false);
     handleCorrect(1);
@@ -494,7 +538,6 @@ function Gemmagotchi() {
         clockDays={clockDays}
         onTab={(t) => {
           setActiveModule(null);
-          setSprinting(false);
           setTab(t);
         }}
         onAdvanceDay={() => {
@@ -505,26 +548,14 @@ function Gemmagotchi() {
           resetClock();
           setClockDays(0);
         }}
+        timer={timer}
+        onOpenTimer={openTimer}
         onOpenSocratic={() => setSocraticOpen(true)}
         onOpenGems={() => setGemsOpen(true)}
       />
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        {sprinting || tab === "focus" ? (
-          <SprintRoom
-            pet={pet}
-            course={course}
-            hasMasterclass={inventory.owned.includes("masterclass")}
-            studyLog={studyLog}
-            onComplete={completeSprint}
-            onCorrect={handleCorrect}
-            onRescue={openRescue}
-            onExit={() => {
-              setSprinting(false);
-              setTab("today");
-            }}
-          />
-        ) : activeModule ? (
+        {activeModule ? (
           <TutorRoom
             course={course}
             module={activeModule}
@@ -547,7 +578,7 @@ function Gemmagotchi() {
                 studyLog={studyLog}
                 onOpenTrajectory={() => setTab("trajectory")}
                 onStartLesson={() => nextModule && setActiveModule(nextModule)}
-                onStartSprint={() => setTab("focus")}
+                onStartSprint={openTimer}
                 onRescue={openRescue}
                 onOpenPlan={() => setTab("plan")}
               />
@@ -604,6 +635,23 @@ function Gemmagotchi() {
           inventory={inventory}
           onRedeem={redeemReward}
           onClose={() => setGemsOpen(false)}
+        />
+      )}
+
+      {timerOpen && timer && (
+        <FocusTimer
+          timer={timer}
+          setTimer={setTimer as React.Dispatch<React.SetStateAction<TimerState>>}
+          pet={pet}
+          subject={course?.subject}
+          nudge={nudge}
+          nudgeLoading={nudgeLoading}
+          onRescue={openRescue}
+          onMinimise={() => setTimerOpen(false)}
+          onClose={() => {
+            setTimerOpen(false);
+            setTimer(null);
+          }}
         />
       )}
 

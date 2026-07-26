@@ -2,16 +2,16 @@ import React from "react";
 import { AvatarSprite, ItemSprite } from "./PixelSprite";
 import { ITEM } from "../lib/sprites";
 import { Flame, FastForward, RotateCcw, Cpu, Cloud, Bot } from "lucide-react";
+import { TimerPill, type TimerState } from "./FocusTimer";
 import type { Learner, PetState, ProviderInfo } from "../types";
 
-export type Tab = "today" | "courses" | "plan" | "drills" | "focus" | "store" | "trajectory";
+export type Tab = "today" | "courses" | "plan" | "drills" | "store" | "trajectory";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "today", label: "Today" },
   { id: "courses", label: "Courses" },
   { id: "plan", label: "Study plan" },
   { id: "drills", label: "Drills" },
-  { id: "focus", label: "Focus room" },
   { id: "store", label: "Store" },
   { id: "trajectory", label: "Trajectory" },
 ];
@@ -26,6 +26,8 @@ interface Props {
   onTab: (t: Tab) => void;
   onAdvanceDay: () => void;
   onResetClock: () => void;
+  timer: TimerState | null;
+  onOpenTimer: () => void;
   onOpenSocratic: () => void;
   onOpenGems: () => void;
 }
@@ -40,6 +42,8 @@ export const Header: React.FC<Props> = ({
   onTab,
   onAdvanceDay,
   onResetClock,
+  timer,
+  onOpenTimer,
   onOpenSocratic,
   onOpenGems,
 }) => (
@@ -69,6 +73,7 @@ export const Header: React.FC<Props> = ({
         </div>
 
         <div className="flex items-center gap-2.5">
+          {timer && <TimerPill timer={timer} onOpen={onOpenTimer} />}
           <button
             onClick={onOpenSocratic}
             className="flex items-center gap-1.5 rounded-full border border-[#E5E2D9] bg-white px-3 py-1.5 text-xs font-bold text-[#5E7161] transition-colors hover:bg-[#F0F4F0]"
