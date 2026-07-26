@@ -174,10 +174,75 @@ const Block: React.FC<{ block: Block }> = ({ block }) => {
 };
 
 /**
+ * The model is told never to emit LaTeX, but cached lessons and slip-ups still
+ * contain it, so residual TeX is translated to readable Unicode rather than
+ * shown raw. This is a translator for the handful of commands that actually
+ * appear in study notes, not a math renderer.
+ */
+const SIMPLE_TEX: Array<[RegExp, string]> = [
+  [/\\rightarrow|\\to\b/g, "→"],
+  [/\\leftarrow\b/g, "←"],
+  [/\\Rightarrow\b/g, "⇒"],
+  [/\\times\b/g, "×"],
+  [/\\cdot\b/g, "·"],
+  [/\\div\b/g, "÷"],
+  [/\\pm\b/g, "±"],
+  [/\\leq?\b/g, "≤"],
+  [/\\geq?\b/g, "≥"],
+  [/\\neq?\b/g, "≠"],
+  [/\\approx\b/g, "≈"],
+  [/\\infty\b/g, "∞"],
+  [/\\sum\b/g, "Σ"],
+  [/\\pi\b/g, "π"],
+  [/\\Delta\b/g, "Δ"],
+  [/\\mu\b/g, "μ"],
+  [/\\sigma\b/g, "σ"],
+  [/\\phi\b/g, "φ"],
+  [/\\lambda\b/g, "λ"],
+  [/\\theta\b/g, "θ"],
+  [/\\alpha\b/g, "α"],
+  [/\\beta\b/g, "β"],
+];
+
+const SUPERSCRIPTS: Record<string, string> = {
+  "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "+": "⁺", "-": "⁻", n: "ⁿ", x: "ˣ",
+};
+const SUBSCRIPTS: Record<string, string> = {
+  "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉", "+": "₊", "-": "₋", n: "ₙ", x: "ₓ", i: "ᵢ", j: "ⱼ",
+};
+
+function toScript(body: string, table: Record<string, string>): string {
+  const mapped = [...body].map((ch) => table[ch]);
+  return mapped.every(Boolean) ? mapped.join("") : `(${body})`;
+}
+
+function detex(text: string): string {
+  if (!text.includes("$") && !text.includes("\\")) return text;
+
+  return text.replace(/\$([^$]+)\$/g, (_m, tex: string) => detexBody(tex)).replace(/\\\((.+?)\\\)/g, (_m, tex: string) => detexBody(tex));
+}
+
+function detexBody(tex: string): string {
+  let out = tex;
+  out = out.replace(/\\text\{([^}]*)\}/g, "$1");
+  out = out.replace(/\\mathrm\{([^}]*)\}/g, "$1");
+  out = out.replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, "$1/$2");
+  out = out.replace(/\^\{([^}]*)\}/g, (_m, b: string) => toScript(b, SUPERSCRIPTS));
+  out = out.replace(/\^(\w)/g, (_m, b: string) => toScript(b, SUPERSCRIPTS));
+  out = out.replace(/_\{([^}]*)\}/g, (_m, b: string) => toScript(b, SUBSCRIPTS));
+  out = out.replace(/_(\w)/g, (_m, b: string) => toScript(b, SUBSCRIPTS));
+  for (const [re, sub] of SIMPLE_TEX) out = out.replace(re, sub);
+  out = out.replace(/\\[a-zA-Z]+/g, "");
+  out = out.replace(/[{}]/g, "");
+  return out.replace(/\s+/g, " ").trim();
+}
+
+/**
  * Inline formatting: `code`, **bold**, *italic*. Split on the whole set at once
  * so nesting order doesn't matter for the shapes lessons actually use.
  */
-const Inline: React.FC<{ text: string }> = ({ text }) => {
+const Inline: React.FC<{ text: string }> = ({ text: rawText }) => {
+  const text = detex(rawText);
   const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean);
   return (
     <>

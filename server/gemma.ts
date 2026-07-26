@@ -13,6 +13,8 @@
  */
 
 import { GoogleGenAI } from "@google/genai";
+import fs from "fs";
+import path from "path";
 
 // ---------------------------------------------------------------------------
 // Model identifiers. These are the only two model strings in the codebase.
@@ -65,12 +67,43 @@ export interface GenerateResult {
 
 const cache = new Map<string, { text: string; provider: "hosted" | "local"; model: string }>();
 
+/**
+ * The cache also lives on disk, because rehearsal runs restart the server
+ * constantly and losing a minute-long local generation to a restart hurts.
+ * Load is best-effort; a corrupt or missing file just means a cold cache.
+ */
+const CACHE_DIR = path.join(process.cwd(), ".cache");
+const CACHE_FILE = path.join(CACHE_DIR, "gemma-cache.json");
+
+try {
+  const raw = JSON.parse(fs.readFileSync(CACHE_FILE, "utf8"));
+  for (const [k, v] of Object.entries(raw)) cache.set(k, v as any);
+  console.log(`  [gemma] warmed ${cache.size} cached responses from disk`);
+} catch {
+  /* cold cache */
+}
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+function persistCache(): void {
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    try {
+      fs.mkdirSync(CACHE_DIR, { recursive: true });
+      fs.writeFileSync(CACHE_FILE, JSON.stringify(Object.fromEntries(cache)), "utf8");
+    } catch (err) {
+      console.warn("[gemma] could not persist cache:", (err as Error)?.message);
+    }
+  }, 1500);
+}
+
 function cacheKeyFor(opts: GenerateOptions): string {
   return `${opts.cacheKey || "default"}::${opts.thinking ? "T" : "-"}::${opts.system || ""}::${opts.prompt}`;
 }
 
 export function clearGemmaCache(): void {
   cache.clear();
+  persistCache();
 }
 
 // ---------------------------------------------------------------------------
@@ -118,11 +151,11 @@ export async function activeProvider(): Promise<{ provider: string; model: strin
   const local = await isLocalAvailable();
   const hosted = !!process.env.GEMINI_API_KEY;
 
-  if (CONFIGURED_PROVIDER === "local" && local) {
-    return { provider: "local", model: GEMMA_MODEL_LOCAL, ready: true };
+  if (CONFIGURED_PROVIDER === "hosted" && hosted) {
+    return { provider: "hosted", model: GEMMA_MODEL_HOSTED, ready: true };
   }
-  if (hosted) return { provider: "hosted", model: GEMMA_MODEL_HOSTED, ready: true };
   if (local) return { provider: "local", model: GEMMA_MODEL_LOCAL, ready: true };
+  if (hosted) return { provider: "hosted", model: GEMMA_MODEL_HOSTED, ready: true };
   return { provider: "none", model: "offline-fallback", ready: false };
 }
 
@@ -230,13 +263,13 @@ export async function generate(opts: GenerateOptions): Promise<GenerateResult> {
     if (hostedReady) order.push("hosted");
     if (local) order.push("local");
   } else {
-    // auto — prefer hosted when a key is configured. The 26B mixture-of-experts
-    // model on Google's infrastructure answers several times faster than a 4B
-    // model on a laptop CPU, which is the difference between a usable tutor and
-    // a spinner. Local is the fallback that keeps the app working with no key,
-    // no network and no quota.
-    if (hostedReady) order.push("hosted");
+    // auto — local first. On this hardware local Gemma is within ~3x of the
+    // hosted API's measured throughput, and it has no rate limits, no network
+    // dependency and no quota to blow mid-demo. Hosted is one .env edit away
+    // (GEMMA_PROVIDER=hosted) and remains the automatic fallback if Ollama
+    // isn't running.
     if (local) order.push("local");
+    if (hostedReady) order.push("hosted");
   }
 
   if (order.length === 0) {
@@ -252,6 +285,7 @@ export async function generate(opts: GenerateOptions): Promise<GenerateResult> {
         provider === "local" ? await generateLocal(opts) : await generateHosted(opts);
       const model = provider === "local" ? GEMMA_MODEL_LOCAL : GEMMA_MODEL_HOSTED;
       cache.set(key, { text, provider, model });
+      persistCache();
       return { text, provider, model, cached: false, ms: Date.now() - started };
     } catch (err) {
       lastError = err;
