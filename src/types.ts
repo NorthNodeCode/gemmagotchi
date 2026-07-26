@@ -94,6 +94,9 @@ export interface StudyLogEntry {
   label: string;
   gems: number;
   wasComeback: boolean;
+  /** Minutes of study this entry represents — sums into total focus time. */
+  durationMins: number;
+  kind: "lesson" | "sprint" | "rescue" | "drill";
 }
 
 export interface ProviderInfo {
