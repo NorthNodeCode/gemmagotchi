@@ -1,100 +1,105 @@
-export type PetType = 'sproutling' | 'pyros' | 'aether';
+import type { PetState } from "./lib/petState";
+import type { PetSpecies } from "./lib/sprites";
 
-export type PetStage = 'seedling' | 'blooming' | 'ancient';
+export type { PetState, PetSpecies };
+export type { PetStage, PetMood } from "./lib/petState";
 
-export interface PetState {
-  id: string;
+export interface Learner {
+  /** Which character sprite represents the learner. 1..8 */
+  character: number;
   name: string;
-  type: PetType;
-  stage: PetStage;
-  health: number; // 0 to 100
-  happiness: number; // 0 to 100
-  xp: number;
-  level: number;
-  isSick: boolean; // True if health < 45 or procrastination skipped
-  sizeScale: number; // 0.5 (shrunk/sick) to 1.5 (big/thriving)
-  lastFedAt: string;
-  accessories: string[];
 }
 
-export type CropType = 'sunflower' | 'wisdom_berry' | 'focus_sprout' | 'crystal_lotus' | 'golden_wheat';
-
-export interface FarmPlot {
-  id: number;
-  cropType: CropType | null;
-  stage: number; // 0 (empty), 1 (sprout), 2 (growing), 3 (mature bloom)
-  watered: boolean;
-  plantedAt?: string;
-}
-
-export interface QuizQuestion {
+export interface CheckQuestion {
   id: string;
+  kind: "mcq" | "text";
   question: string;
-  options: string[];
-  correctIndex: number;
-  explanation: string;
+  options?: string[];
+  correctIndex?: number;
+  explanation?: string;
+  modelAnswer?: string;
 }
 
-export interface CourseModule {
+export interface SubLesson {
   id: string;
   title: string;
   description: string;
   durationMins: number;
-  completed: boolean;
   keyTakeaway?: string;
-  quizQuestions?: QuizQuestion[];
+  sourceExcerpt?: string;
+  completed: boolean;
 }
 
 export interface Course {
   id: string;
   title: string;
-  category: string;
+  subject: string;
   description: string;
-  iconName: string;
+  examDate?: string;
+  /** The learner's own pasted material — everything is taught from this. */
+  notes: string;
   estimatedWeeks: number;
-  progressPercent: number;
-  modules: CourseModule[];
+  modules: SubLesson[];
 }
 
-export interface StudyLog {
-  id: string;
-  timestamp: string;
-  courseTitle: string;
-  durationMins: number;
-  gemsEarned: number;
-  petHealAmount: number;
-  wasProcrastinationRescued: boolean;
+export interface LessonPayload {
+  lesson: string;
+  questions: CheckQuestion[];
 }
 
-export interface AINudge {
+export interface GradeResult {
+  verdict: "correct" | "partial" | "incorrect";
+  feedback: string;
+  missedPoint?: string | null;
+}
+
+export interface Nudge {
   nudge: string;
-  tone: 'urgent' | 'encouraging' | 'celebratory' | 'warning';
+  tone: "welcoming" | "encouraging" | "celebratory" | "sleepy";
   actionItem: string;
   petReaction: string;
 }
 
-export interface ProcrastinationRescueData {
+export interface RescuePayload {
   rescueTitle: string;
   microChallenge: string;
-  quickQuestion?: QuizQuestion;
-  rewardFocusGems: number;
-  petHealAmount: number;
+  quickQuestion?: { question: string; options: string[]; correctIndex: number };
   encouragement: string;
 }
 
-export interface TrajectoryDataPoint {
+export interface TrajectoryPoint {
   week: string;
   consistentMastery: number;
-  procrastinatingMastery: number;
+  driftingMastery: number;
   petHealthConsistent: number;
-  petHealthProcrastinating: number;
+  petHealthDrifting: number;
 }
 
 export interface TrajectoryForecast {
   summaryText: string;
-  forecastData: TrajectoryDataPoint[];
-  outcomes: {
-    ifConsistent: string;
-    ifProcrastinating: string;
-  };
+  forecastData: TrajectoryPoint[];
+  outcomes: { ifConsistent: string; ifDrifting: string };
+}
+
+export interface Inventory {
+  /** Cosmetic ids the learner owns. */
+  owned: string[];
+  /** Food id -> quantity held. */
+  food: Record<string, number>;
+}
+
+export interface StudyLogEntry {
+  id: string;
+  at: number;
+  label: string;
+  gems: number;
+  wasComeback: boolean;
+}
+
+export interface ProviderInfo {
+  provider: string;
+  model: string;
+  ready: boolean;
+  hosted: string;
+  local: string;
 }

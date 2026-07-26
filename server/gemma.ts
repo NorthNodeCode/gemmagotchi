@@ -263,9 +263,87 @@ export function stripFences(raw: string): string {
   // Some models prepend a sentence; salvage the outermost JSON value.
   const firstBrace = text.search(/[[{]/);
   if (firstBrace > 0) text = text.slice(firstBrace);
-  const lastBrace = Math.max(text.lastIndexOf("}"), text.lastIndexOf("]"));
-  if (lastBrace !== -1 && lastBrace < text.length - 1) text = text.slice(0, lastBrace + 1);
   return text.trim();
+}
+
+/**
+ * Parse model JSON, repairing the failures that actually happen in practice:
+ * trailing commas, and output cut off mid-structure when the token budget runs
+ * out. Truncation is the common one — the content up to the cut is usually
+ * perfectly good, so we close the open brackets and keep it rather than
+ * throwing away a whole lesson's worth of questions.
+ */
+export function parseLoose<T = any>(raw: string): T {
+  const text = stripFences(raw);
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    /* fall through to repair */
+  }
+
+  // Drop trailing commas before a closing bracket.
+  const decommaed = text.replace(/,\s*([}\]])/g, "$1");
+  try {
+    return JSON.parse(decommaed) as T;
+  } catch {
+    /* fall through to truncation repair */
+  }
+
+  return JSON.parse(closeTruncated(decommaed)) as T;
+}
+
+/**
+ * Walk the text tracking string state and bracket depth, cut back to the last
+ * position where the structure was complete enough to close, then close it.
+ */
+function closeTruncated(text: string): string {
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+  /** Index just past the last complete array/object element. */
+  let lastSafe = -1;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') inString = true;
+    else if (ch === "{" || ch === "[") stack.push(ch === "{" ? "}" : "]");
+    else if (ch === "}" || ch === "]") {
+      stack.pop();
+      if (stack.length === 1) lastSafe = i + 1;
+    } else if (ch === "," && stack.length === 1) lastSafe = i;
+  }
+
+  // Cut back to the last element boundary so we never keep a half-written one.
+  let body = lastSafe > 0 ? text.slice(0, lastSafe) : text;
+  body = body.replace(/,\s*$/, "");
+
+  // Re-derive what still needs closing after the cut.
+  const closers: string[] = [];
+  let s = false;
+  let e = false;
+  for (const ch of body) {
+    if (s) {
+      if (e) e = false;
+      else if (ch === "\\") e = true;
+      else if (ch === '"') s = false;
+      continue;
+    }
+    if (ch === '"') s = true;
+    else if (ch === "{") closers.push("}");
+    else if (ch === "[") closers.push("]");
+    else if (ch === "}" || ch === "]") closers.pop();
+  }
+
+  return body + closers.reverse().join("");
 }
 
 /**
@@ -279,7 +357,7 @@ export async function generateJSON<T = any>(
 
   const first = await generate({ ...opts, system });
   try {
-    return { data: JSON.parse(stripFences(first.text)) as T, meta: metaOf(first) };
+    return { data: parseLoose<T>(first.text), meta: metaOf(first) };
   } catch {
     // Retry once, quoting the malformed output back at the model.
     const retry = await generate({
@@ -288,7 +366,7 @@ export async function generateJSON<T = any>(
       cacheKey: `${opts.cacheKey || "default"}:repair`,
       prompt: `${opts.prompt}\n\nYour previous reply was not valid JSON:\n${first.text.slice(0, 800)}\n\nReturn the same information as valid JSON only.`,
     });
-    return { data: JSON.parse(stripFences(retry.text)) as T, meta: metaOf(retry) };
+    return { data: parseLoose<T>(retry.text), meta: metaOf(retry) };
   }
 }
 

@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import {
+  generate,
   generateJSON,
   activeProvider,
   GEMMA_MODEL_HOSTED,
@@ -110,34 +111,54 @@ Return JSON of this exact shape:
 app.post("/api/ai/lesson", async (req, res) => {
   const { moduleTitle, sourceExcerpt, notes, subject, previousLessons } = req.body || {};
   try {
-    const { data, meta } = await generateJSON({
-      system: LESSON_SYSTEM,
-      cacheKey: "lesson",
-      maxTokens: 3000,
-      prompt: `Teach this single sub-lesson.
-
-SUBJECT: ${subject || "the subject"}
+    const source = String(sourceExcerpt || notes || "").slice(0, 8000);
+    const context = `SUBJECT: ${subject || "the subject"}
 SUB-LESSON: ${moduleTitle}
 ${previousLessons?.length ? `ALREADY COVERED (do not re-teach): ${previousLessons.join("; ")}` : ""}
 
 SOURCE MATERIAL (the learner's own notes — teach what is here, and fill in anything essential they omitted):
 """
-${String(sourceExcerpt || notes || "").slice(0, 8000)}
-"""
+${source}
+"""`;
 
-Write the lesson, then 3 check questions: two multiple-choice and one short free-text question that requires the learner to explain or apply the idea in their own words.
+    // Prose and questions are generated separately. Asking for a long markdown
+    // document inside a JSON string field makes smaller models cut the prose
+    // short to get to the closing brace; as free text they teach properly.
+    const [lessonResult, checks] = await Promise.all([
+      generate({
+        system: LESSON_SYSTEM,
+        cacheKey: "lesson-prose",
+        maxTokens: 2200,
+        prompt: `${context}
 
-Return JSON of this exact shape:
+Teach this one sub-lesson now, in markdown. Follow every style rule: open with the italic "*The question this answers: ...*" line, teach the concept in full detail with a concrete worked example using real values, and close with the bold "**In one sentence:** ..." line.
+
+Write the lesson itself and nothing else — no preamble, no questions, no closing remarks.`,
+      }),
+      generateJSON<{ questions: any[] }>({
+        system: LESSON_SYSTEM,
+        cacheKey: "lesson-checks",
+        maxTokens: 2000,
+        prompt: `${context}
+
+Write 3 questions checking whether the learner can APPLY this concept (not recall a word): two multiple-choice with four options each, then one short free-text question.
+
+Return JSON:
 {
-  "lesson": "the full lesson in markdown, following the required structure",
   "questions": [
     { "id": "q1", "kind": "mcq", "question": "...", "options": ["...","...","...","..."], "correctIndex": 0, "explanation": "why that option is right and the others are not" },
     { "id": "q2", "kind": "mcq", "question": "...", "options": ["...","...","...","..."], "correctIndex": 2, "explanation": "..." },
     { "id": "q3", "kind": "text", "question": "...", "modelAnswer": "what a full-credit answer contains" }
   ]
 }`,
+      }),
+    ]);
+
+    res.json({
+      lesson: lessonResult.text.trim(),
+      questions: checks.data?.questions || [],
+      _gemma: { provider: lessonResult.provider, model: lessonResult.model, ms: lessonResult.ms },
     });
-    res.json({ ...data, _gemma: meta });
   } catch (error: any) {
     console.error("[lesson]", error?.message || error);
     res.status(200).json({

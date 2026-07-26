@@ -1,395 +1,286 @@
-import React, { useState, useEffect } from 'react';
-import { PetState, FarmPlot, Course, CourseModule, StudyLog } from './types';
-import { Navbar } from './components/Navbar';
-import { DashboardView } from './components/DashboardView';
-import { FocusStudyRoom } from './components/FocusStudyRoom';
-import { SpiritFarm } from './components/SpiritFarm';
-import { CourseExplorer } from './components/CourseExplorer';
-import { TrajectorySimulator } from './components/TrajectorySimulator';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import confetti from "canvas-confetti";
+import { Header, type Tab } from "./components/Header";
+import { Onboarding, type OnboardingResult } from "./components/Onboarding";
+import { TodayView } from "./components/TodayView";
+import { PlanView } from "./components/PlanView";
+import { TutorRoom } from "./components/TutorRoom";
+import { StoreView } from "./components/StoreView";
+import { TrajectoryView } from "./components/TrajectoryView";
+import { RescueModal } from "./components/RescueModal";
+import { buildCurriculum, fetchNudge, fetchProvider, fetchRescue } from "./services/api";
+import { applyDecay, createPet, feedPet, recordStudy, type PetState } from "./lib/petState";
+import { advanceDays, now, offsetDays, resetClock } from "./lib/clock";
+import { FOODS } from "./lib/sprites";
+import type {
+  Course,
+  Inventory,
+  Learner,
+  Nudge,
+  ProviderInfo,
+  RescuePayload,
+  SubLesson,
+} from "./types";
 
-const INITIAL_PET: PetState = {
-  id: 'pet-1',
-  name: 'Sproutling',
-  type: 'sproutling',
-  stage: 'seedling',
-  health: 85,
-  happiness: 90,
-  xp: 35,
-  level: 1,
-  isSick: false,
-  sizeScale: 1.1,
-  lastFedAt: new Date().toISOString(),
-  accessories: [],
+const KEYS = {
+  learner: "gemmagotchi_learner",
+  pet: "gemmagotchi_pet",
+  course: "gemmagotchi_course",
+  gems: "gemmagotchi_gems",
+  inventory: "gemmagotchi_inventory",
+  minutes: "gemmagotchi_minutes",
 };
 
-const INITIAL_PLOTS: FarmPlot[] = [
-  { id: 0, cropType: 'focus_sprout', stage: 3, watered: true },
-  { id: 1, cropType: 'sunflower', stage: 2, watered: true },
-  { id: 2, cropType: 'wisdom_berry', stage: 1, watered: false },
-  { id: 3, cropType: null, stage: 0, watered: false },
-  { id: 4, cropType: 'golden_wheat', stage: 2, watered: true },
-  { id: 5, cropType: null, stage: 0, watered: false },
-];
-
-const INITIAL_COURSES: Course[] = [
-  {
-    id: 'c1',
-    title: 'Gemma 4 AI & Active Learning Systems',
-    category: 'Computer Science',
-    description: 'Master modern generative AI capabilities, prompt mechanics, and active study system design.',
-    iconName: 'BrainCircuit',
-    estimatedWeeks: 3,
-    progressPercent: 33,
-    modules: [
-      {
-        id: 'c1-m1',
-        title: 'Active Recall vs Passive Reading',
-        description: 'Why active retrieval consolidates long-term memory pathways.',
-        durationMins: 15,
-        completed: true,
-        keyTakeaway: 'Forced retrieval creates 3x stronger memory retention.',
-      },
-      {
-        id: 'c1-m2',
-        title: 'Beating Activation Energy',
-        description: 'Using 120-second micro-tasks to bypass brain friction.',
-        durationMins: 20,
-        completed: false,
-        keyTakeaway: 'Starting takes zero effort when broken down.',
-      },
-      {
-        id: 'c1-m3',
-        title: 'Gemma 4 Accountability Architecture',
-        description: 'Designing proactive AI nudges and feedback loops.',
-        durationMins: 25,
-        completed: false,
-        keyTakeaway: 'Timely nudges prevent procrastination spirals.',
-      },
-    ],
-  },
-  {
-    id: 'c2',
-    title: 'Neuroscience of Memory & Habit Loops',
-    category: 'Neuroscience',
-    description: 'Explore dopamine reward loops, synaptic plasticity, and spaced repetition.',
-    iconName: 'Sparkles',
-    estimatedWeeks: 4,
-    progressPercent: 0,
-    modules: [
-      {
-        id: 'c2-m1',
-        title: 'Dopamine & Focus Loops',
-        description: 'How gamified feedback loops trigger flow states.',
-        durationMins: 20,
-        completed: false,
-        keyTakeaway: 'Immediate feedback keeps attention locked in.',
-      },
-      {
-        id: 'c2-m2',
-        title: 'Ebbinghaus Forgetting Curve',
-        description: 'Optimizing review intervals to prevent knowledge decay.',
-        durationMins: 25,
-        completed: false,
-        keyTakeaway: 'Reviewing before decay resets memory retention.',
-      },
-    ],
-  },
-  {
-    id: 'c3',
-    title: 'Quantitative Machine Learning Fundamentals',
-    category: 'Mathematics',
-    description: 'Linear algebra, matrix decompositions, and loss optimization.',
-    iconName: 'TrendingUp',
-    estimatedWeeks: 5,
-    progressPercent: 0,
-    modules: [
-      {
-        id: 'c3-m1',
-        title: 'Vectors & Matrix Multiplications',
-        description: 'Geometric interpretation of linear transformations.',
-        durationMins: 25,
-        completed: false,
-        keyTakeaway: 'Matrices transform high-dimensional vector spaces.',
-      },
-      {
-        id: 'c3-m2',
-        title: 'Gradient Descent & Loss Optimization',
-        description: 'Backpropagation and parameter weight adjustments.',
-        durationMins: 30,
-        completed: false,
-        keyTakeaway: 'Gradients point in the direction of steepest loss ascent.',
-      },
-    ],
-  },
-];
+function load<T>(key: string, fallback: T): T {
+  if (typeof localStorage === "undefined") return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'focus' | 'farm' | 'courses' | 'trajectory'>('dashboard');
+  const [learner, setLearner] = useState<Learner | null>(() => load<Learner | null>(KEYS.learner, null));
+  const [pet, setPet] = useState<PetState | null>(() => load<PetState | null>(KEYS.pet, null));
+  const [course, setCourse] = useState<Course | null>(() => load<Course | null>(KEYS.course, null));
+  const [gems, setGems] = useState<number>(() => load(KEYS.gems, 30));
+  const [inventory, setInventory] = useState<Inventory>(() =>
+    load<Inventory>(KEYS.inventory, { owned: [], food: {} })
+  );
+  const [minutesPerDay, setMinutesPerDay] = useState<number>(() => load(KEYS.minutes, 20));
 
-  // Persisted state
-  const [pet, setPet] = useState<PetState>(() => {
-    const saved = localStorage.getItem('gemma4_pet');
-    return saved ? JSON.parse(saved) : INITIAL_PET;
-  });
+  const [tab, setTab] = useState<Tab>("today");
+  const [activeModule, setActiveModule] = useState<SubLesson | null>(null);
+  const [building, setBuilding] = useState(false);
+  const [provider, setProvider] = useState<ProviderInfo | null>(null);
+  const [clockDays, setClockDays] = useState(() => offsetDays());
 
-  const [gems, setGems] = useState<number>(() => {
-    const saved = localStorage.getItem('gemma4_gems');
-    return saved ? JSON.parse(saved) : 45;
-  });
+  const [nudge, setNudge] = useState<Nudge | null>(null);
+  const [nudgeLoading, setNudgeLoading] = useState(false);
+  const [celebrate, setCelebrate] = useState(0);
 
-  const [waterMins, setWaterMins] = useState<number>(() => {
-    const saved = localStorage.getItem('gemma4_water');
-    return saved ? JSON.parse(saved) : 30;
-  });
+  const [rescueOpen, setRescueOpen] = useState(false);
+  const [rescue, setRescue] = useState<RescuePayload | null>(null);
+  const [rescueLoading, setRescueLoading] = useState(false);
 
-  const [streakDays, setStreakDays] = useState<number>(() => {
-    const saved = localStorage.getItem('gemma4_streak');
-    return saved ? JSON.parse(saved) : 3;
-  });
-
-  const [farmPlots, setFarmPlots] = useState<FarmPlot[]>(() => {
-    const saved = localStorage.getItem('gemma4_farm');
-    return saved ? JSON.parse(saved) : INITIAL_PLOTS;
-  });
-
-  const [courses, setCourses] = useState<Course[]>(() => {
-    const saved = localStorage.getItem('gemma4_courses');
-    return saved ? JSON.parse(saved) : INITIAL_COURSES;
-  });
-
-  const [activeCourseId, setActiveCourseId] = useState<string>('c1');
-  const [studyLogs, setStudyLogs] = useState<StudyLog[]>([]);
-
-  // Sync to localStorage
-  useEffect(() => {
-    localStorage.setItem('gemma4_pet', JSON.stringify(pet));
-  }, [pet]);
+  // Persist everything that matters.
+  useEffect(() => { if (learner) localStorage.setItem(KEYS.learner, JSON.stringify(learner)); }, [learner]);
+  useEffect(() => { if (pet) localStorage.setItem(KEYS.pet, JSON.stringify(pet)); }, [pet]);
+  useEffect(() => { if (course) localStorage.setItem(KEYS.course, JSON.stringify(course)); }, [course]);
+  useEffect(() => { localStorage.setItem(KEYS.gems, JSON.stringify(gems)); }, [gems]);
+  useEffect(() => { localStorage.setItem(KEYS.inventory, JSON.stringify(inventory)); }, [inventory]);
+  useEffect(() => { localStorage.setItem(KEYS.minutes, JSON.stringify(minutesPerDay)); }, [minutesPerDay]);
 
   useEffect(() => {
-    localStorage.setItem('gemma4_gems', JSON.stringify(gems));
-  }, [gems]);
+    fetchProvider().then(setProvider);
+  }, []);
+
+  /**
+   * Time passing is what makes the pet droop, so decay is applied when the app
+   * opens and whenever the demo clock moves — not on a background timer.
+   */
+  const settlePet = useCallback(() => {
+    setPet((p) => (p ? applyDecay(p, now()) : p));
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem('gemma4_water', JSON.stringify(waterMins));
-  }, [waterMins]);
+    settlePet();
+  }, [settlePet, clockDays]);
 
+  const nextModule = useMemo(() => course?.modules.find((m) => !m.completed) ?? null, [course]);
+
+  // Ask the pet for a line whenever its situation meaningfully changes.
   useEffect(() => {
-    localStorage.setItem('gemma4_streak', JSON.stringify(streakDays));
-  }, [streakDays]);
+    if (!pet || !course) return;
+    let cancelled = false;
+    setNudgeLoading(true);
+    fetchNudge({ pet, subject: course.subject, nextStep: nextModule?.title })
+      .then((n) => !cancelled && setNudge(n))
+      .finally(() => !cancelled && setNudgeLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [pet?.health, pet?.streak, pet?.stage, course?.id, nextModule?.id, clockDays]);
 
-  useEffect(() => {
-    localStorage.setItem('gemma4_farm', JSON.stringify(farmPlots));
-  }, [farmPlots]);
+  async function handleOnboarding(result: OnboardingResult) {
+    setBuilding(true);
+    const t = now();
+    try {
+      const plan = await buildCurriculum({
+        notes: result.notes,
+        subject: result.subject,
+        examDate: result.examDate,
+        minutesPerDay: result.minutesPerDay,
+      });
+      setCourse({
+        id: `course-${t}`,
+        title: plan.title,
+        subject: result.subject,
+        description: plan.description,
+        examDate: result.examDate,
+        notes: result.notes,
+        estimatedWeeks: plan.estimatedWeeks,
+        modules: plan.modules,
+      });
+      setLearner({ character: result.character, name: "You" });
+      setPet(createPet(result.petName, result.species, t));
+      setMinutesPerDay(result.minutesPerDay);
+    } finally {
+      setBuilding(false);
+    }
+  }
 
-  useEffect(() => {
-    localStorage.setItem('gemma4_courses', JSON.stringify(courses));
-  }, [courses]);
-
-  const activeCourse = courses.find((c) => c.id === activeCourseId) || courses[0];
-
-  // Pet Feeding / Healing
-  const handleFeedPet = () => {
-    if (gems < 10) return;
-    setGems((prev) => prev - 10);
-    setPet((prev) => {
-      const newHealth = Math.min(100, prev.health + 20);
-      const isSick = newHealth < 45;
-      const sizeScale = isSick ? 0.6 : Math.min(1.5, 0.8 + (newHealth / 100) * 0.7);
-      const newXP = prev.xp + 15;
-      let stage = prev.stage;
-      let level = prev.level;
-
-      if (newXP >= 100) {
-        level += 1;
-        stage = level >= 3 ? 'ancient' : level >= 2 ? 'blooming' : 'seedling';
+  /** A correct answer feeds the pet's growth — this is the core reward. */
+  function handleCorrect(weight: number) {
+    setPet((p) => {
+      if (!p) return p;
+      const result = recordStudy(p, now(), weight, 5);
+      setGems((g) => g + result.gems);
+      if (result.hatched || result.grewUp) {
+        confetti({ particleCount: 140, spread: 90, origin: { y: 0.6 } });
+      } else if (result.comebackDays > 0) {
+        confetti({ particleCount: 80, spread: 70, origin: { y: 0.7 } });
       }
-
-      return {
-        ...prev,
-        health: newHealth,
-        isSick,
-        sizeScale,
-        xp: newXP % 100,
-        level,
-        stage,
-      };
+      return result.pet;
     });
-  };
+    setCelebrate((c) => c + 1);
+  }
 
-  // Complete Focus Sprint Session
-  const handleCompleteSession = (mins: number, earnedGems: number, healAmt: number) => {
-    setGems((prev) => prev + earnedGems);
-    setWaterMins((prev) => prev + mins);
-
-    setPet((prev) => {
-      const newHealth = Math.min(100, prev.health + healAmt);
-      const isSick = newHealth < 45;
-      const sizeScale = isSick ? 0.6 : Math.min(1.5, 0.8 + (newHealth / 100) * 0.7);
-      return {
-        ...prev,
-        health: newHealth,
-        isSick,
-        sizeScale,
-        xp: prev.xp + 20,
-      };
+  function handleLessonComplete(moduleId: string, score: number) {
+    setCourse((c) =>
+      c
+        ? {
+            ...c,
+            modules: c.modules.map((m) => (m.id === moduleId ? { ...m, completed: true } : m)),
+          }
+        : c
+    );
+    // Finishing counts for more than any single answer inside it.
+    setPet((p) => {
+      if (!p) return p;
+      const result = recordStudy(p, now(), 2, 15 + score * 2);
+      setGems((g) => g + result.gems);
+      return result.pet;
     });
+  }
 
-    setStudyLogs((prev) => [
-      ...prev,
-      {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        courseTitle: activeCourse ? activeCourse.title : 'Focus Session',
-        durationMins: mins,
-        gemsEarned: earnedGems,
-        petHealAmount: healAmt,
-        wasProcrastinationRescued: false,
-      },
-    ]);
-  };
+  async function openRescue() {
+    if (!pet) return;
+    setRescueOpen(true);
+    setRescueLoading(true);
+    try {
+      setRescue(await fetchRescue({ pet, subject: course?.subject }));
+    } finally {
+      setRescueLoading(false);
+    }
+  }
 
-  // Rescue Complete
-  const handleRescueComplete = (earnedGems: number, healAmt: number) => {
-    setGems((prev) => prev + earnedGems);
-    setPet((prev) => {
-      const newHealth = Math.min(100, prev.health + healAmt);
-      const isSick = newHealth < 45;
-      const sizeScale = isSick ? 0.6 : Math.min(1.5, 0.8 + (newHealth / 100) * 0.7);
-      return {
-        ...prev,
-        health: newHealth,
-        isSick,
-        sizeScale,
-        xp: prev.xp + 15,
-      };
-    });
-  };
+  function completeRescue() {
+    setRescueOpen(false);
+    handleCorrect(1);
+  }
 
-  // Farm Actions
-  const handleWaterPlot = (plotId: number) => {
-    if (waterMins < 5) return;
-    setWaterMins((prev) => prev - 5);
-    setFarmPlots((prev) =>
-      prev.map((p) => {
-        if (p.id === plotId) {
-          const nextStage = Math.min(3, p.stage + 1);
-          return { ...p, stage: nextStage, watered: true };
-        }
-        return p;
-      })
-    );
-  };
+  function buyFood(foodId: string) {
+    const food = FOODS.find((f) => f.id === foodId);
+    if (!food || gems < food.cost) return;
+    setGems((g) => g - food.cost);
+    setInventory((inv) => ({
+      ...inv,
+      food: { ...inv.food, [foodId]: (inv.food[foodId] ?? 0) + 1 },
+    }));
+  }
 
-  const handlePlantCrop = (plotId: number, cropType: any) => {
-    setFarmPlots((prev) =>
-      prev.map((p) => (p.id === plotId ? { ...p, cropType, stage: 1, watered: false } : p))
-    );
-  };
+  function useFood(foodId: string) {
+    const food = FOODS.find((f) => f.id === foodId);
+    if (!food || (inventory.food[foodId] ?? 0) <= 0) return;
+    setInventory((inv) => ({
+      ...inv,
+      food: { ...inv.food, [foodId]: inv.food[foodId] - 1 },
+    }));
+    setPet((p) => (p ? feedPet(p, food.health) : p));
+    setCelebrate((c) => c + 1);
+  }
 
-  const handleHarvestPlot = (plotId: number) => {
-    setFarmPlots((prev) =>
-      prev.map((p) => (p.id === plotId ? { ...p, cropType: null, stage: 0, watered: false } : p))
-    );
-    setGems((prev) => prev + 20);
-    setPet((prev) => ({ ...prev, xp: prev.xp + 25 }));
-  };
-
-  // Toggle Module Completion
-  const handleToggleModuleComplete = (courseId: string, moduleId: string) => {
-    setCourses((prev) =>
-      prev.map((c) => {
-        if (c.id === courseId) {
-          const updatedModules = c.modules.map((m) =>
-            m.id === moduleId ? { ...m, completed: !m.completed } : m
-          );
-          const completedCount = updatedModules.filter((m) => m.completed).length;
-          const progressPercent = Math.round((completedCount / updatedModules.length) * 100);
-          return { ...c, modules: updatedModules, progressPercent };
-        }
-        return c;
-      })
-    );
-  };
-
-  const handleAddCourse = (newCourse: Course) => {
-    setCourses((prev) => [newCourse, ...prev]);
-    setActiveCourseId(newCourse.id);
-  };
+  if (!learner || !pet || !course) {
+    return <Onboarding busy={building} onComplete={handleOnboarding} />;
+  }
 
   return (
-    <div className="min-h-screen bg-[#FDFCF8] text-[#2D362E] font-sans antialiased selection:bg-[#5E7161] selection:text-white">
-      <Navbar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
+    <div className="min-h-screen bg-[#FDFCF8] font-sans text-[#2D362E] antialiased">
+      <Header
+        learner={learner}
         pet={pet}
         gems={gems}
-        waterMins={waterMins}
-        streakDays={streakDays}
-        onStartSprint={() => setActiveTab('focus')}
+        tab={tab}
+        provider={provider}
+        clockDays={clockDays}
+        onTab={(t) => {
+          setActiveModule(null);
+          setTab(t);
+        }}
+        onAdvanceDay={() => {
+          advanceDays(1);
+          setClockDays(offsetDays());
+        }}
+        onResetClock={() => {
+          resetClock();
+          setClockDays(0);
+        }}
       />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {activeTab === 'dashboard' && (
-          <DashboardView
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+        {activeModule ? (
+          <TutorRoom
+            course={course}
+            module={activeModule}
             pet={pet}
-            courses={courses}
-            activeCourse={activeCourse}
-            gems={gems}
-            waterMins={waterMins}
-            streakDays={streakDays}
-            studyLogs={studyLogs}
-            farmPlots={farmPlots}
-            onFeedPet={handleFeedPet}
-            onStartSprint={() => setActiveTab('focus')}
-            onNavigateTab={setActiveTab}
-            onSelectCourse={setActiveCourseId}
-            onTriggerRescue={() => setActiveTab('focus')}
+            onCorrect={handleCorrect}
+            onLessonComplete={handleLessonComplete}
+            onExit={() => setActiveModule(null)}
           />
-        )}
-
-        {activeTab === 'focus' && (
-          <FocusStudyRoom
-            currentCourse={activeCourse}
-            pet={pet}
-            onCompleteSession={handleCompleteSession}
-            onRescueComplete={handleRescueComplete}
-            onExit={() => setActiveTab('dashboard')}
-          />
-        )}
-
-        {activeTab === 'farm' && (
-          <SpiritFarm
-            plots={farmPlots}
-            pet={pet}
-            studyMinutesAvailable={waterMins}
-            gems={gems}
-            onWaterPlot={handleWaterPlot}
-            onPlantCrop={handlePlantCrop}
-            onHarvestPlot={handleHarvestPlot}
-          />
-        )}
-
-        {activeTab === 'courses' && (
-          <CourseExplorer
-            courses={courses}
-            activeCourseId={activeCourseId}
-            onSelectCourse={setActiveCourseId}
-            onAddCourse={handleAddCourse}
-            onStartModuleSprint={(c, m) => {
-              setActiveCourseId(c.id);
-              setActiveTab('focus');
-            }}
-            onToggleModuleComplete={handleToggleModuleComplete}
-          />
-        )}
-
-        {activeTab === 'trajectory' && (
-          <TrajectorySimulator
-            currentCourse={activeCourse}
-            streak={streakDays}
-          />
+        ) : (
+          <>
+            {tab === "today" && (
+              <TodayView
+                pet={pet}
+                course={course}
+                nudge={nudge}
+                nudgeLoading={nudgeLoading}
+                nextModule={nextModule}
+                celebrateKey={celebrate}
+                onStartLesson={() => nextModule && setActiveModule(nextModule)}
+                onRescue={openRescue}
+                onOpenPlan={() => setTab("plan")}
+              />
+            )}
+            {tab === "plan" && <PlanView course={course} onStart={setActiveModule} />}
+            {tab === "store" && (
+              <StoreView gems={gems} pet={pet} inventory={inventory} onBuy={buyFood} onFeed={useFood} />
+            )}
+            {tab === "trajectory" && (
+              <TrajectoryView pet={pet} subject={course.subject} minutesPerDay={minutesPerDay} />
+            )}
+          </>
         )}
       </main>
+
+      {rescueOpen && (
+        <RescueModal
+          pet={pet}
+          data={rescue}
+          loading={rescueLoading}
+          onComplete={completeRescue}
+          onClose={() => setRescueOpen(false)}
+        />
+      )}
+
+      <footer className="border-t border-[#E5E2D9] px-4 py-6 text-center text-[11px] text-[#7A837C]">
+        Every lesson, nudge and mark on this page is generated by{" "}
+        <span className="font-bold text-[#5E7161]">{provider?.model ?? "Gemma 4"}</span>
+        {provider?.provider === "local" && " running entirely on this machine"}.
+      </footer>
     </div>
   );
 }

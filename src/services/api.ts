@@ -1,187 +1,181 @@
-import { AINudge, Course, ProcrastinationRescueData, TrajectoryForecast, QuizQuestion } from '../types';
+/**
+ * Client wrappers for the Gemma 4 endpoints.
+ *
+ * Every call degrades to something usable if the model is unreachable, because
+ * a study companion that goes blank when the network hiccups is a companion
+ * that gets uninstalled.
+ */
 
-export async function fetchAINudge(params: {
-  petState: any;
-  currentCourse?: string;
-  lastStudiedMinutesAgo?: number;
-  streakDays?: number;
-  procrastinationRisk?: string;
-}): Promise<AINudge> {
+import type {
+  Course,
+  GradeResult,
+  LessonPayload,
+  Nudge,
+  PetState,
+  ProviderInfo,
+  RescuePayload,
+  SubLesson,
+  TrajectoryForecast,
+} from "../types";
+import { daysBetween, moodFor } from "../lib/petState";
+import { now } from "../lib/clock";
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${path} returned ${res.status}`);
+  return (await res.json()) as T;
+}
+
+/** The pet context every pet-voiced endpoint needs. */
+function petContext(pet: PetState) {
+  const daysSinceStudy = daysBetween(pet.lastStudiedAt, now());
+  return {
+    name: pet.name,
+    species: pet.species,
+    stage: pet.stage,
+    mood: moodFor(pet.health),
+    health: pet.health,
+    daysSinceStudy,
+    streak: pet.streak,
+    isComeback: daysSinceStudy > 1,
+  };
+}
+
+export async function fetchProvider(): Promise<ProviderInfo | null> {
   try {
-    const res = await fetch('/api/ai/nudge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    if (!res.ok) throw new Error('Nudge API failed');
-    return await res.json();
-  } catch (error) {
-    console.warn('Using client fallback for AI Nudge:', error);
-    const health = params.petState?.health ?? 80;
-    if (health < 40) {
-      return {
-        nudge: "ALERT: Your Spirit Pet is shivering from study drought! Complete 1 micro-task now to revive it!",
-        tone: "urgent",
-        actionItem: "Do a 2-minute active recall drill right now.",
-        petReaction: "Sproutling looks at you with big, drooping eyes..."
-      };
-    }
+    const res = await fetch("/api/provider");
+    if (!res.ok) return null;
+    return (await res.json()) as ProviderInfo;
+  } catch {
+    return null;
+  }
+}
+
+export async function buildCurriculum(input: {
+  notes: string;
+  subject: string;
+  examDate?: string;
+  minutesPerDay?: number;
+}): Promise<Pick<Course, "title" | "description" | "estimatedWeeks"> & { modules: SubLesson[] }> {
+  const data = await post<any>("/api/ai/curriculum", input);
+  return {
+    title: data.title || input.subject,
+    description: data.description || "",
+    estimatedWeeks: data.estimatedWeeks || 2,
+    modules: (data.modules || []).map((m: any, i: number) => ({
+      id: m.id || `mod-${i + 1}`,
+      title: m.title || `Part ${i + 1}`,
+      description: m.description || "",
+      durationMins: m.durationMins || 15,
+      keyTakeaway: m.keyTakeaway,
+      sourceExcerpt: m.sourceExcerpt,
+      completed: false,
+    })),
+  };
+}
+
+export async function fetchLesson(input: {
+  moduleTitle: string;
+  sourceExcerpt?: string;
+  notes: string;
+  subject: string;
+  previousLessons?: string[];
+}): Promise<LessonPayload> {
+  const data = await post<any>("/api/ai/lesson", input);
+  return {
+    lesson: data.lesson || "",
+    questions: (data.questions || []).map((q: any, i: number) => ({
+      id: q.id || `q${i + 1}`,
+      kind: q.kind === "text" ? "text" : "mcq",
+      question: q.question || "",
+      options: q.options,
+      correctIndex: q.correctIndex,
+      explanation: q.explanation,
+      modelAnswer: q.modelAnswer,
+    })),
+  };
+}
+
+export async function gradeAnswer(input: {
+  question: string;
+  modelAnswer?: string;
+  learnerAnswer: string;
+  subject: string;
+}): Promise<GradeResult> {
+  try {
+    return await post<GradeResult>("/api/ai/grade", input);
+  } catch {
     return {
-      nudge: "Consistency is key! Solve 1 concept check today to expand your Spirit Farm.",
-      tone: "encouraging",
-      actionItem: "Start a 10-minute focus session.",
-      petReaction: "Sproutling is cheerful and glowing with energy!"
+      verdict: "partial",
+      feedback: "Could not reach the tutor to mark this one — compare against the model answer and carry on.",
+      missedPoint: null,
     };
   }
 }
 
-export async function generateCourseBreakdown(topic: string, goalHoursPerWeek: number = 3): Promise<Partial<Course>> {
+export async function fetchNudge(input: {
+  pet: PetState;
+  subject?: string;
+  nextStep?: string;
+}): Promise<Nudge> {
   try {
-    const res = await fetch('/api/ai/breakdown', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topic, goalHoursPerWeek }),
+    return await post<Nudge>("/api/ai/nudge", {
+      pet: petContext(input.pet),
+      subject: input.subject,
+      nextStep: input.nextStep,
     });
-    if (!res.ok) throw new Error('Breakdown API failed');
-    return await res.json();
-  } catch (error) {
-    console.warn('Using client fallback for Course Breakdown:', error);
-    return {
-      title: topic,
-      description: `Structured active mastery path for ${topic}`,
-      estimatedWeeks: 4,
-      modules: [
-        {
-          id: 'mod-1',
-          title: `${topic}: Core Fundamentals`,
-          description: 'Understanding foundational principles and mental models.',
-          durationMins: 20,
-          completed: false,
-          keyTakeaway: 'Master fundamental terminology and core concepts.'
-        },
-        {
-          id: 'mod-2',
-          title: `${topic}: Active Practice & Drills`,
-          description: 'Solving concrete problems with active recall.',
-          durationMins: 25,
-          completed: false,
-          keyTakeaway: 'Apply key techniques without looking at references.'
-        },
-        {
-          id: 'mod-3',
-          title: `${topic}: Deep Reasoning & Synthesis`,
-          description: 'Synthesizing ideas into advanced problem-solving.',
-          durationMins: 30,
-          completed: false,
-          keyTakeaway: 'Solve real-world challenges confidently.'
+  } catch {
+    const ctx = petContext(input.pet);
+    return ctx.isComeback
+      ? {
+          nudge: `${ctx.name} perks right up when you appear. Good to see you!`,
+          tone: "welcoming",
+          actionItem: "One quick question to warm up — that's all.",
+          petReaction: `${ctx.name} bounds over to you`,
         }
-      ]
-    };
+      : {
+          nudge: `${ctx.name} is ready when you are.`,
+          tone: "encouraging",
+          actionItem: "Start the next sub-lesson, it's a short one.",
+          petReaction: `${ctx.name} watches you hopefully`,
+        };
   }
 }
 
-export async function fetchProcrastinationRescue(currentTopic: string, reasonForFeelingLazy?: string): Promise<ProcrastinationRescueData> {
+export async function fetchRescue(input: {
+  pet: PetState;
+  subject?: string;
+  feeling?: string;
+}): Promise<RescuePayload> {
   try {
-    const res = await fetch('/api/ai/procrastination-rescue', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ currentTopic, reasonForFeelingLazy }),
+    return await post<RescuePayload>("/api/ai/rescue", {
+      pet: petContext(input.pet),
+      subject: input.subject,
+      feeling: input.feeling,
     });
-    if (!res.ok) throw new Error('Rescue API failed');
-    return await res.json();
-  } catch (error) {
-    console.warn('Using client fallback for Rescue API:', error);
+  } catch {
     return {
-      rescueTitle: "2-Minute Zero-Friction Rescue",
-      microChallenge: `Spend 120 seconds summarizing 2 main ideas about ${currentTopic}.`,
+      rescueTitle: "The two-minute restart",
+      microChallenge: `Write down two things you already remember about ${input.subject || "your topic"}. That's the whole task.`,
       quickQuestion: {
-        id: 'q-rescue',
-        question: `How do you overcome resistance when starting ${currentTopic}?`,
-        options: [
-          'Commit to just 2 minutes of effortless action',
-          'Wait until energy is 100% perfect',
-          'Clean the entire desk for 3 hours'
-        ],
+        question: "What size of first step works best when starting feels hard?",
+        options: ["The smallest one you won't refuse", "A three-hour block", "Wait for motivation"],
         correctIndex: 0,
-        explanation: 'Action triggers motivation, not the other way around!'
       },
-      rewardFocusGems: 25,
-      petHealAmount: 35,
-      encouragement: "Starting takes zero effort — do this single step to heal your pet!"
+      encouragement: `${input.pet.name} is just glad you're here.`,
     };
   }
 }
 
-export async function fetchTrajectoryForecast(params: {
-  currentCourse: string;
-  averageMinsPerDay: number;
-  skippedDaysCount: number;
+export async function fetchTrajectory(input: {
+  subject?: string;
+  minutesPerDay: number;
   streak: number;
+  daysSinceStudy: number;
 }): Promise<TrajectoryForecast> {
-  try {
-    const res = await fetch('/api/ai/trajectory-forecast', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    if (!res.ok) throw new Error('Forecast API failed');
-    return await res.json();
-  } catch (error) {
-    console.warn('Using client fallback for Trajectory Forecast:', error);
-    return {
-      summaryText: `Maintaining a 20m/day streak on ${params.currentCourse} boosts 30-day retention to 92% and evolves your pet into an Ancient Guardian!`,
-      forecastData: [
-        { week: 'Week 1', consistentMastery: 25, procrastinatingMastery: 12, petHealthConsistent: 92, petHealthProcrastinating: 50 },
-        { week: 'Week 2', consistentMastery: 52, procrastinatingMastery: 20, petHealthConsistent: 96, petHealthProcrastinating: 35 },
-        { week: 'Week 3', consistentMastery: 78, procrastinatingMastery: 25, petHealthConsistent: 100, petHealthProcrastinating: 20 },
-        { week: 'Week 4', consistentMastery: 96, procrastinatingMastery: 28, petHealthConsistent: 100, petHealthProcrastinating: 8 }
-      ],
-      outcomes: {
-        ifConsistent: "Complete course mastery in 28 days! Spirit Pet achieves Ancient Guardian status with glowing farm aura.",
-        ifProcrastinating: "Stuck at 28% mastery after 1 month. Pet shrinks to wilting state and loses 15 farm crops."
-      }
-    };
-  }
-}
-
-export async function fetchAIQuiz(moduleTitle: string, concept: string): Promise<{ questions: QuizQuestion[] }> {
-  try {
-    const res = await fetch('/api/ai/quiz', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ moduleTitle, concept }),
-    });
-    if (!res.ok) throw new Error('Quiz API failed');
-    return await res.json();
-  } catch (error) {
-    console.warn('Using client fallback for AI Quiz:', error);
-    return {
-      questions: [
-        {
-          id: 'fallback-q1',
-          question: `Which active study technique yields the highest retention for ${concept || 'this topic'}?`,
-          options: [
-            'Active recall and self-testing without notes',
-            'Highlighting paragraphs with 5 neon markers',
-            'Passive re-reading of slides',
-            'Listening to lecture audio while sleeping'
-          ],
-          correctIndex: 0,
-          explanation: 'Forced retrieval strengthens memory consolidation pathways!'
-        },
-        {
-          id: 'fallback-q2',
-          question: 'What is the most effective way to prevent procrastination loops?',
-          options: [
-            'Reducing task size to a 2-minute micro-action',
-            'Setting an overwhelming 8-hour uninterrupted study block',
-            'Waiting for sudden burst of natural inspiration',
-            'Browsing social media for study hacks'
-          ],
-          correctIndex: 0,
-          explanation: 'Lowering the activation energy removes mental friction.'
-        }
-      ]
-    };
-  }
+  return post<TrajectoryForecast>("/api/ai/trajectory", input);
 }
