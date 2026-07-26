@@ -10,6 +10,7 @@ import { TrajectoryView } from "./components/TrajectoryView";
 import { RescueModal } from "./components/RescueModal";
 import { DevSprites } from "./components/DevSprites";
 import { CoursesView } from "./components/CoursesView";
+import { SocraticModal } from "./components/SocraticModal";
 import {
   buildCurriculum,
   fetchNudge,
@@ -96,6 +97,10 @@ function Gemmagotchi() {
   const [nudge, setNudge] = useState<Nudge | null>(null);
   const [nudgeLoading, setNudgeLoading] = useState(false);
   const [celebrate, setCelebrate] = useState(0);
+
+  const [socraticOpen, setSocraticOpen] = useState(false);
+  const [gemsOpen, setGemsOpen] = useState(false);
+  const [pitchOpen, setPitchOpen] = useState(false);
 
   const [rescueOpen, setRescueOpen] = useState(false);
   const [rescue, setRescue] = useState<RescuePayload | null>(null);
@@ -325,6 +330,9 @@ function Gemmagotchi() {
           resetClock();
           setClockDays(0);
         }}
+        onOpenSocratic={() => setSocraticOpen(true)}
+        onOpenGems={() => setGemsOpen(true)}
+        onOpenPitch={() => setPitchOpen(true)}
       />
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
@@ -373,6 +381,10 @@ function Gemmagotchi() {
           </>
         )}
       </main>
+
+      {socraticOpen && (
+        <SocraticModal pet={pet} course={course} onClose={() => setSocraticOpen(false)} />
+      )}
 
       {rescueOpen && (
         <RescueModal

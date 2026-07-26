@@ -15,7 +15,9 @@ import {
   CURRICULUM_SYSTEM,
   LESSON_SYSTEM,
   GRADER_SYSTEM,
+  SOCRATIC_MODES,
   petStateBlock,
+  type SocraticMode,
 } from "./server/prompts";
 
 dotenv.config();
@@ -251,6 +253,74 @@ Return JSON:
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// 3b. Socratic partner — a live conversation, grounded in the learner's own
+//     material. Multi-turn: the last few messages are replayed as context, so
+//     a follow-up like "why?" means something.
+// ---------------------------------------------------------------------------
+app.post("/api/ai/socratic-chat", async (req, res) => {
+  const { topic, userMessage, mode, petName, notes, history, pet } = req.body || {};
+  const chatMode: SocraticMode = mode in SOCRATIC_MODES ? mode : "socratic";
+  const askingPet = !!req.body?.askPet;
+
+  // The pet answers in its own voice; the tutor modes answer in the tutor's.
+  const system = askingPet
+    ? `${PET_VOICE}\n\n${petStateBlock({
+        name: petName || "your pet",
+        species: pet?.species || "creature",
+        stage: pet?.stage || "baby",
+        mood: pet?.mood || "content",
+        health: pet?.health ?? 80,
+        daysSinceStudy: pet?.daysSinceStudy ?? 0,
+        streak: pet?.streak ?? 0,
+        isComeback: !!pet?.isComeback,
+      })}`
+    : SOCRATIC_MODES[chatMode];
+
+  const transcript = Array.isArray(history)
+    ? history
+        .slice(-8)
+        .map((m: any) => `${m.sender === "user" ? "LEARNER" : "YOU"}: ${String(m.text).slice(0, 600)}`)
+        .join("\n")
+    : "";
+
+  try {
+    const { text, ...meta } = await generate({
+      system,
+      cacheKey: `socratic:${chatMode}:${askingPet}`,
+      maxTokens: askingPet ? 200 : 600,
+      prompt: `TOPIC: ${topic || "their course"}
+${notes ? `\nTHE LEARNER'S OWN MATERIAL (teach from this, it is what they must know):\n"""${String(notes).slice(0, 1500)}"""\n` : ""}${transcript ? `\nCONVERSATION SO FAR:\n${transcript}\n` : ""}
+LEARNER'S NEW MESSAGE: ${String(userMessage || "").slice(0, 1000)}
+
+Reply directly, in character. Plain prose — no JSON, no markdown headings, no LaTeX.`,
+    });
+
+    res.json({ reply: text.trim(), sender: askingPet ? "pet" : "gemma", _gemma: meta });
+  } catch (error: any) {
+    console.error("[socratic]", error?.message || error);
+    res.json({ reply: socraticFallback(chatMode, topic, askingPet, petName), sender: askingPet ? "pet" : "gemma", _offline: true });
+  }
+});
+
+function socraticFallback(
+  mode: SocraticMode,
+  topic: string,
+  askingPet: boolean,
+  petName?: string
+): string {
+  if (askingPet) {
+    return `${petName || "Your pet"} nudges your hand. Every question you answer makes me a little bigger — want to do just one?`;
+  }
+  if (mode === "test") {
+    return `Gemma is offline, so here is the question that always works: explain ${topic || "this concept"} to someone who has never heard of it, out loud, without looking at your notes. Where you stall is what to study next.`;
+  }
+  if (mode === "explain") {
+    return `Gemma is offline right now. In the meantime: find the single worked example in your notes for ${topic || "this topic"} and redo it on paper without looking. Getting stuck is the useful part — it shows you the exact step you do not yet own.`;
+  }
+  return `Gemma is offline right now. Try this instead: write down what you think you know about ${topic || "this topic"}, then find the one sentence in your notes that would prove you wrong.`;
+}
 
 // ---------------------------------------------------------------------------
 // 4. Nudge — the pet's voice, driven by its current state.
