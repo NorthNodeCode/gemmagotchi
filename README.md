@@ -82,7 +82,7 @@ gems that scale with how long you were gone.
 ## Credits
 
 Pixel art by **shubibubi**.
-Developed during the GDG Gemma 4 Hackathon Sprint by:
-Abdurrehman Sajid
-Favour Odeyale
+Developed during the GDG Gemma 4 Hackathon Sprint (won first place) by:
+Abdurrehman Sajid  
+Favour Odeyale  
 Arik Subedi
